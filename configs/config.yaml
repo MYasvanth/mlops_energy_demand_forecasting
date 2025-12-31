@@ -1,0 +1,18 @@
+# Main configuration file for Energy Demand Forecasting
+# This file contains the base configuration that can be overridden by environment-specific configs
+
+defaults:
+  - model: model_config
+  - monitoring: monitoring_config
+  - prefect: prefect_config
+  - _self_
+
+# Environment settings
+environment: ${oc.env:ENV,dev}
+debug: false
+
+# Paths (relative to project root)
+data_dir: data
+models_dir: models
+logs_dir: logs
+configs_dir: configs

@@ -1,0 +1,27 @@
+# Development environment overrides
+environment: dev
+debug: true
+
+# Development-specific settings
+model:
+  optuna:
+    n_trials: 10  # Fewer trials for faster development
+    timeout: 1800  # 30 minutes timeout
+
+monitoring:
+  alerting:
+    enabled: false  # Disable alerts in development
+
+  dashboard:
+    enabled: true
+    port: 8502  # Different port for dev
+
+prefect:
+  flow:
+    name: "Energy Demand Forecasting - DEV"
+
+  logging:
+    level: "DEBUG"
+
+  infrastructure:
+    type: "process"  # Use process for development

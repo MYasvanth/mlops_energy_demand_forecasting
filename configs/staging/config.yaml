@@ -1,0 +1,33 @@
+# Staging environment overrides
+environment: staging
+debug: false
+
+# Staging-specific settings
+model:
+  optuna:
+    n_trials: 30  # Medium number of trials
+    timeout: 7200  # 2 hours timeout
+
+monitoring:
+  alerting:
+    enabled: true
+    email:
+      enabled: true
+
+  dashboard:
+    enabled: true
+    port: 8501
+
+prefect:
+  flow:
+    name: "Energy Demand Forecasting - STAGING"
+
+  logging:
+    level: "INFO"
+
+  scheduling:
+    enabled: true
+    cron_schedule: "0 6 * * *"  # Daily at 6 AM for staging
+
+  infrastructure:
+    type: "process"

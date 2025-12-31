@@ -1,0 +1,50 @@
+# Core ML Libraries
+pandas
+numpy
+scikit-learn
+seaborn
+
+# MLOps Tools
+mlflow
+dvc
+streamlit
+optuna
+evidently
+zenml[mlflow,scikit-learn,dvc,evidently,optuna]>=0.41.0
+
+# Data Processing
+pyyaml
+joblib
+pyarrow
+
+# API and Serving
+fastapi
+uvicorn
+pydantic
+
+# Monitoring and Logging
+wandb
+prometheus-client
+
+# Development and Testing
+pytest
+
+# Visualization
+matplotlib
+plotly
+
+# Utilities
+tqdm
+click
+python-dotenv
+requests
+pyparsing
+nest-asyncio
+
+# Additional Dependencies
+sqlalchemy
+deepchecks
+prophet
+tensorflow
+statsmodels
+prefect

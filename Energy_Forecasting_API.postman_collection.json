@@ -1,0 +1,102 @@
+{
+	"info": {
+		"name": "Energy Forecasting API",
+		"description": "API endpoints for energy demand forecasting",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000"
+		}
+	],
+	"item": [
+		{
+			"name": "Health Check",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/health",
+					"host": ["{{base_url}}"],
+					"path": ["health"]
+				}
+			}
+		},
+		{
+			"name": "List Models",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/models",
+					"host": ["{{base_url}}"],
+					"path": ["models"]
+				}
+			}
+		},
+		{
+			"name": "Predict with File Path",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"model_name\": \"prophet\",\n  \"hours_ahead\": 24,\n  \"data_path\": \"data/processed/processed_energy_weather.csv\"\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/predict",
+					"host": ["{{base_url}}"],
+					"path": ["predict"]
+				}
+			}
+		},
+		{
+			"name": "Predict with Data",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"model_name\": \"arima\",\n  \"hours_ahead\": 12,\n  \"recent_data\": [\n    {\"time\": \"2024-01-01T00:00:00\", \"total_load_actual\": 45000},\n    {\"time\": \"2024-01-01T01:00:00\", \"total_load_actual\": 43000},\n    {\"time\": \"2024-01-01T02:00:00\", \"total_load_actual\": 41000}\n  ]\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/predict",
+					"host": ["{{base_url}}"],
+					"path": ["predict"]
+				}
+			}
+		},
+		{
+			"name": "Ensemble Predict",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"model_name\": \"ensemble\",\n  \"hours_ahead\": 24,\n  \"data_path\": \"data/processed/processed_energy_weather.csv\"\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/ensemble-predict",
+					"host": ["{{base_url}}"],
+					"path": ["ensemble-predict"]
+				}
+			}
+		}
+	]
+}

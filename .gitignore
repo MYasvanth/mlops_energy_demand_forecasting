@@ -1,0 +1,95 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# MLflow
+mlruns/
+mlartifacts/
+*.db
+
+# Weights & Biases
+wandb/
+
+# DVC
+.dvc/cache/
+
+# Model artifacts
+*.pkl
+*.h5
+*.joblib
+models/production/
+models/staging/
+
+# Data (tracked by DVC)
+data/raw/*.csv
+data/processed/*.csv
+!data/raw/*.dvc
+!data/processed/*.dvc
+
+# Logs
+logs/
+*.log
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+archive*.zip
+
+# Monitoring artifacts
+energy_monitoring/
+reports/monitoring_*/
+reports/drift_reports/
+reports/model_performance/*.json
+reports/monitoring/*.html
+
+# Test coverage
+.coverage
+htmlcov/
+
+# Prefect
+.prefect/

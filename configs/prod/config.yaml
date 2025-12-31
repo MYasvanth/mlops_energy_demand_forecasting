@@ -1,0 +1,51 @@
+# Production environment overrides
+environment: prod
+debug: false
+
+# Production-specific settings
+model:
+  optuna:
+    n_trials: 50  # Full optimization for production
+    timeout: 14400  # 4 hours timeout
+
+  persistence:
+    save_best_only: true
+
+monitoring:
+  alerting:
+    enabled: true
+    email:
+      enabled: true
+    slack:
+      enabled: true
+
+  dashboard:
+    enabled: true
+    port: 8501
+
+  performance:
+    enabled: true
+    metrics_collection_interval_minutes: 5  # More frequent in production
+
+prefect:
+  flow:
+    name: "Energy Demand Forecasting - PRODUCTION"
+
+  logging:
+    level: "WARNING"
+
+  scheduling:
+    enabled: true
+    cron_schedule: "0 2 * * *"  # Daily at 2 AM for production
+
+  infrastructure:
+    type: "docker"  # Use Docker in production
+
+  monitoring:
+    enabled: true
+    alert_on_failure: true
+    alert_on_timeout: true
+
+  performance:
+    task_runner: "ConcurrentTaskRunner"
+    max_workers: 8

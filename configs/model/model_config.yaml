@@ -1,0 +1,90 @@
+# Model Configuration for Energy Demand Forecasting
+
+# General settings
+model:
+  target_column: "total_load_actual"
+  date_column: "time"
+  forecast_horizon: 24  # hours ahead to forecast
+
+# Model hyperparameters for different algorithms
+models:
+  arima:
+    order: [5, 1, 0]  # (p, d, q)
+    seasonal_order: [1, 1, 1, 24]  # (P, D, Q, s) for seasonal ARIMA
+
+  prophet:
+    changepoint_prior_scale: 0.05
+    seasonality_prior_scale: 10.0
+    holidays_prior_scale: 10.0
+    seasonality_mode: "multiplicative"
+    yearly_seasonality: true
+    weekly_seasonality: true
+    daily_seasonality: true
+
+  lstm:
+    sequence_length: 24  # Lookback window
+    hidden_units: [64, 32]
+    dropout_rate: 0.2
+    learning_rate: 0.001
+    batch_size: 32
+    epochs: 100
+    early_stopping_patience: 10
+
+# Optuna hyperparameter tuning settings
+optuna:
+  n_trials: 50
+  timeout: 3600  # seconds
+  study_name: "energy_demand_forecasting"
+  direction: "minimize"  # for MAE
+
+  # Parameter search spaces
+  arima_search:
+    p_range: [1, 7]
+    d_range: [0, 2]
+    q_range: [0, 7]
+    P_range: [0, 3]
+    D_range: [0, 2]
+    Q_range: [0, 3]
+    seasonal_period: 24
+
+  prophet_search:
+    changepoint_prior_scale_range: [0.001, 0.5]
+    seasonality_prior_scale_range: [0.01, 10.0]
+    holidays_prior_scale_range: [0.01, 10.0]
+
+  lstm_search:
+    hidden_units_choices: [[32, 16], [64, 32], [128, 64], [64, 32, 16]]
+    dropout_rate_range: [0.1, 0.5]
+    learning_rate_range: [0.0001, 0.01]
+    batch_size_choices: [16, 32, 64]
+
+# Cross-validation settings
+cross_validation:
+  n_splits: 5
+  test_size: 0.2
+  time_series_split: true
+
+# Feature selection
+feature_selection:
+  enabled: true
+  method: "recursive"  # recursive, mutual_info, correlation
+  max_features: null  # null means no limit
+  importance_threshold: 0.01
+
+# Model evaluation metrics
+evaluation:
+  primary_metric: "mae"  # mae, mse, rmse, mape, r2
+  secondary_metrics: ["mse", "rmse", "mape", "r2"]
+
+# Model persistence
+persistence:
+  model_dir: "models/production"
+  artifact_dir: "artifacts"
+  save_best_only: true
+  save_format: "joblib"  # joblib, pickle, onnx
+
+# Prediction settings
+prediction:
+  batch_size: 1000
+  confidence_interval: 0.95
+  prediction_format: "dataframe"  # dataframe, json, csv

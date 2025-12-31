@@ -1,0 +1,165 @@
+# Monitoring Configuration for Energy Demand Forecasting
+
+# Alert thresholds and rules
+alerting:
+  enabled: true
+  evaluation_interval_minutes: 60  # How often to check alerts
+
+  # Email notifications
+  email:
+    enabled: false  # Set to true to enable email alerts
+    smtp_server: "smtp.gmail.com"
+    smtp_port: 587
+    username: "your-email@gmail.com"
+    password: "your-app-password"  # Use app password for Gmail
+    from_email: "alerts@energyforecast.com"
+    to_emails:
+      - "admin@energyforecast.com"
+      - "operations@energyforecast.com"
+
+  # Slack notifications
+  slack:
+    enabled: false  # Set to true to enable Slack alerts
+    webhook_url: "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+    channel: "#energy-alerts"
+
+# Alert rules configuration
+alert_rules:
+  - name: "High Peak Demand Error"
+    metric: "peak_demand.peak_mape"
+    condition: ">"
+    threshold: 15.0
+    severity: "error"
+    description: "Peak demand forecast error exceeds 15%"
+    enabled: true
+
+  - name: "Low Model Accuracy"
+    metric: "mae"
+    condition: ">"
+    threshold: 300.0
+    severity: "warning"
+    description: "Model MAE exceeds acceptable threshold"
+    enabled: true
+
+  - name: "Data Drift Detected"
+    metric: "data_drift.drift_score"
+    condition: ">"
+    threshold: 0.05
+    severity: "warning"
+    description: "Significant data drift detected"
+    enabled: true
+
+  - name: "Low Reliability Score"
+    metric: "forecast_reliability.reliability_score"
+    condition: "<"
+    threshold: 70.0
+    severity: "warning"
+    description: "Forecast reliability score below 70%"
+    enabled: true
+
+  - name: "High Business Impact"
+    metric: "business_impact.business_impact_score"
+    condition: "<"
+    threshold: 80.0
+    severity: "error"
+    description: "Business impact score below 80%"
+    enabled: true
+
+  - name: "Low Renewable Penetration"
+    metric: "renewable_contribution.renewable_penetration"
+    condition: "<"
+    threshold: 20.0
+    severity: "info"
+    description: "Renewable energy penetration below 20%"
+    enabled: true
+
+  - name: "Critical Model Degradation"
+    metric: "r2_score"
+    condition: "<"
+    threshold: 0.5
+    severity: "critical"
+    description: "Model R² score critically low"
+    enabled: true
+
+# Business metrics configuration
+business_metrics:
+  enabled: true
+  energy_price_per_mwh: 0.12  # USD per MWh
+  peak_hours: [17, 18, 19, 20]  # Peak demand hours (24-hour format)
+  renewable_columns:
+    - "generation_solar"
+    - "generation_wind_onshore"
+    - "generation_hydro_water_reservoir"
+
+# Monitoring dashboard configuration
+dashboard:
+  enabled: true
+  port: 8501
+  refresh_interval_seconds: 300  # 5 minutes
+  max_history_days: 30
+
+  # Dashboard sections
+  sections:
+    - name: "overview"
+      title: "System Overview"
+      enabled: true
+    - name: "performance"
+      title: "Model Performance"
+      enabled: true
+    - name: "business_metrics"
+      title: "Business Metrics"
+      enabled: true
+    - name: "alerts"
+      title: "Active Alerts"
+      enabled: true
+    - name: "historical"
+      title: "Historical Trends"
+      enabled: true
+
+# Evidently monitoring configuration
+evidently:
+  enabled: true
+  reference_data_path: "data/processed/processed_energy_weather.csv"
+  current_data_path: "data/processed/current_batch.csv"
+  reports_dir: "reports/monitoring"
+
+  # Monitoring checks
+  checks:
+    data_quality: true
+    data_drift: true
+    model_performance: true
+    target_drift: true
+
+  # Drift detection parameters
+  drift_detection:
+    threshold: 0.05
+    statistical_test: "ks"  # Kolmogorov-Smirnov test
+    confidence_level: 0.95
+
+# Logging configuration
+logging:
+  level: "INFO"
+  file: "logs/monitoring.log"
+  max_file_size_mb: 100
+  backup_count: 5
+
+# Performance monitoring
+performance:
+  enabled: true
+  metrics_collection_interval_minutes: 15
+  retention_days: 90
+
+  # System metrics to monitor
+  system_metrics:
+    - cpu_usage
+    - memory_usage
+    - disk_usage
+    - network_io
+
+  # Model metrics to monitor
+  model_metrics:
+    - mae
+    - rmse
+    - r2_score
+    - peak_accuracy
+    - business_impact_score

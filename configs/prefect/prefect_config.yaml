@@ -1,0 +1,157 @@
+# Prefect Configuration for Energy Demand Forecasting
+
+# Flow settings
+flow:
+  name: "Energy Demand Forecasting Orchestration"
+  description: "Complete ML pipeline orchestration with ZenML and monitoring"
+  version: "1.0.0"
+  tags: ["mlops", "energy", "forecasting", "zenml", "prefect"]
+
+# Task settings
+tasks:
+  default_retries: 3
+  default_retry_delay: 60  # seconds
+  timeout: 3600  # 1 hour timeout for tasks
+
+# Scheduling settings
+scheduling:
+  enabled: true
+  cron_schedule: "0 2 * * *"  # Daily at 2 AM
+  timezone: "UTC"
+  max_concurrent_runs: 1
+  catchup: false
+
+# Notification settings
+notifications:
+  enabled: true
+  channels:
+    - email
+    - slack
+    # - teams
+    # - sms
+
+  email:
+    enabled: true
+    smtp_server: "smtp.gmail.com"
+    smtp_port: 587
+    sender_email: "noreply@energyforecast.com"
+    recipient_emails:
+      - "mlops-team@company.com"
+      - "data-scientist@company.com"
+    use_tls: true
+    username_env_var: "SMTP_USERNAME"
+    password_env_var: "SMTP_PASSWORD"
+
+  slack:
+    enabled: true
+    webhook_url_env_var: "SLACK_WEBHOOK_URL"
+    channel: "#mlops-alerts"
+    username: "Energy Forecast Bot"
+    icon_emoji: ":chart_with_upwards_trend:"
+
+# Logging settings
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  log_to_file: true
+  log_dir: "logs/prefect"
+  max_log_size: "10 MB"
+  backup_count: 5
+
+# Storage settings
+storage:
+  type: "local"  # local, s3, gcs, azure
+  base_path: "artifacts/prefect"
+
+  # For cloud storage (uncomment and configure as needed)
+  # s3:
+  #   bucket: "energy-forecast-artifacts"
+  #   key_env_var: "AWS_ACCESS_KEY_ID"
+  #   secret_env_var: "AWS_SECRET_ACCESS_KEY"
+  #   region: "us-east-1"
+
+  # gcs:
+  #   bucket: "energy-forecast-artifacts"
+  #   service_account_key_path: "configs/gcp-service-account.json"
+
+  # azure:
+  #   container: "artifacts"
+  #   connection_string_env_var: "AZURE_STORAGE_CONNECTION_STRING"
+
+# Infrastructure settings
+infrastructure:
+  type: "process"  # process, docker, kubernetes
+  concurrency_limit: 5
+
+  # Docker settings (for docker infrastructure)
+  docker:
+    image: "energy-forecast:latest"
+    networks: ["mlops-network"]
+    env_vars:
+      - "PYTHONPATH=/app"
+      - "MLFLOW_TRACKING_URI=http://mlflow:5000"
+    volumes:
+      - "./data:/app/data:ro"
+      - "./models:/app/models:rw"
+      - "./artifacts:/app/artifacts:rw"
+
+  # Kubernetes settings (for kubernetes infrastructure)
+  kubernetes:
+    namespace: "mlops"
+    image: "energy-forecast:latest"
+    cpu_request: "500m"
+    memory_request: "1Gi"
+    cpu_limit: "2000m"
+    memory_limit: "4Gi"
+    service_account_name: "prefect-agent"
+    env_vars:
+      - name: "PYTHONPATH"
+        value: "/app"
+      - name: "MLFLOW_TRACKING_URI"
+        value: "http://mlflow.mlops.svc.cluster.local:5000"
+
+# Monitoring and alerting
+monitoring:
+  enabled: true
+  heartbeat_interval: 300  # 5 minutes
+  alert_on_failure: true
+  alert_on_timeout: true
+  alert_thresholds:
+    max_runtime_hours: 4
+    max_failures_per_hour: 3
+
+# Environment settings
+environment:
+  python_version: "3.9"
+  virtual_env_path: ".venv"
+  requirements_file: "requirements.txt"
+
+# Security settings
+security:
+  secrets_backend: "env"  # env, vault, aws_secrets
+  encrypt_flow_code: false
+
+  # Vault settings (for vault secrets backend)
+  # vault:
+  #   url: "https://vault.company.com"
+  #   token_env_var: "VAULT_TOKEN"
+  #   path: "secret/energy-forecast"
+
+# Performance settings
+performance:
+  task_runner: "ConcurrentTaskRunner"
+  max_workers: 4
+  prefetch_seconds: 10
+
+# Error handling
+error_handling:
+  retry_failed_tasks: true
+  exponential_backoff: true
+  max_retry_delay: 3600  # 1 hour
+  jitter: true
+
+# Cleanup settings
+cleanup:
+  enabled: true
+  max_age_days: 30
+  cleanup_schedule: "0 3 * * *"  # Daily at 3 AM
