@@ -20,30 +20,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Cache data loading
-@st.cache_data
-def load_sample_data():
-    """Load sample data for demonstration."""
-    # Generate sample time series data
-    dates = pd.date_range(start='2024-01-01', periods=1000, freq='H')
-    np.random.seed(42)
 
-    # Generate realistic energy demand patterns
-    base_load = 25000 + 5000 * np.sin(2 * np.pi * dates.hour / 24)  # Daily pattern
-    weekly_pattern = 1 + 0.1 * np.sin(2 * np.pi * dates.dayofweek / 7)  # Weekly pattern
-    noise = np.random.normal(0, 1000, len(dates))
-
-    data = pd.DataFrame({
-        'time': dates,
-        'total_load_actual': base_load * weekly_pattern + noise,
-        'generation_solar': np.maximum(0, 8000 * np.sin(np.pi * dates.hour / 12) + np.random.normal(0, 500, len(dates))),
-        'generation_wind_onshore': np.maximum(0, 6000 + 2000 * np.random.normal(0, 1, len(dates))),
-        'temperature': 15 + 10 * np.sin(2 * np.pi * dates.dayofyear / 365) + np.random.normal(0, 3, len(dates)),
-        'wind_speed': np.maximum(0, 5 + 3 * np.random.normal(0, 1, len(dates)))
-    })
-
-    data.set_index('time', inplace=True)
-    return data
 
 def create_sidebar():
     """Create sidebar with controls."""
@@ -251,18 +228,27 @@ def main():
     st.markdown("---")
 
     # Load data
-    with st.spinner("Loading data..."):
+    with st.spinner("Loading data from GitHub..."):
         from data_loader import load_energy_dataset
         data = load_energy_dataset()
         
         if data is None:
-            st.error("❌ Failed to load energy data. Please check data sources.")
+            st.error("❌ Failed to load energy data from GitHub.")
+            st.stop()
+        
+        # Ensure required columns exist
+        if 'total_load_actual' not in data.columns:
+            st.error("❌ Required column 'total_load_actual' not found in data.")
             st.stop()
         
         # Convert time column to datetime if needed
         if 'time' in data.columns:
             data['time'] = pd.to_datetime(data['time'])
             data.set_index('time', inplace=True)
+        elif data.index.name != 'time':
+            # If no time column, create index from row numbers as hourly data
+            data.index = pd.date_range(start='2024-01-01', periods=len(data), freq='H')
+            data.index.name = 'time'
 
     # Sidebar
     selected_model, forecast_hours = create_sidebar()
@@ -286,7 +272,7 @@ def main():
 
     # Footer
     st.markdown("---")
-    st.markdown("*Built with Streamlit • Real data via DVC*")
+    st.markdown("*Built with Streamlit • Data from GitHub*")
 
 if __name__ == "__main__":
     main()

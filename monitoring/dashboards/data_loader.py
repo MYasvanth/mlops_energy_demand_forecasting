@@ -82,48 +82,32 @@ class DataLoader:
             return None
     
     def load_weather_data(self) -> Optional[pd.DataFrame]:
-        """Load weather dataset with fallback strategies."""
-        weather_file = self.raw_dir / "weather_features.csv"
+        """Load weather dataset from GitHub raw URL."""
+        # GitHub raw URL for weather dataset
+        github_url = "https://raw.githubusercontent.com/MYasvanth/mlops_energy_demand_forecasting/main/data/raw/weather_features.csv"
         
-        # Strategy 1: Try local file first
-        if weather_file.exists():
-            try:
-                logger.info("Loading weather data from local file")
-                return pd.read_csv(weather_file)
-            except Exception as e:
-                logger.warning(f"Failed to load local weather file: {e}")
-        
-        # Strategy 2: Try DVC pull if available
-        if self.check_dvc_available():
-            if self.pull_dvc_data() and weather_file.exists():
-                try:
-                    return pd.read_csv(weather_file)
-                except Exception as e:
-                    logger.warning(f"Failed to load weather after DVC pull: {e}")
-        
-        # Strategy 3: Try loading from cloud storage URL (if configured)
-        cloud_url = st.secrets.get("WEATHER_DATA_URL") if hasattr(st, 'secrets') else None
-        if cloud_url:
-            data = self.load_from_url(cloud_url)
-            if data is not None:
-                return data
-        
-        # No weather data available
-        logger.info("No weather data available")
-        return None
+        try:
+            logger.info("Loading weather data from GitHub")
+            return pd.read_csv(github_url)
+        except Exception as e:
+            logger.error(f"Failed to load weather from GitHub: {e}")
+            return None
     
     def load_processed_data(self) -> Optional[pd.DataFrame]:
-        """Load processed dataset if available."""
-        processed_file = self.processed_dir / "processed_energy_weather.csv"
-        
-        if processed_file.exists():
-            try:
-                logger.info("Loading processed data from local file")
-                return pd.read_csv(processed_file)
-            except Exception as e:
-                logger.warning(f"Failed to load processed file: {e}")
-        
-        return None
+        """Generate processed data from raw data."""
+        try:
+            energy_data = self.load_energy_data()
+            weather_data = self.load_weather_data()
+            
+            if energy_data is not None:
+                logger.info("Using energy data as processed data")
+                return energy_data
+            
+            logger.error("No data available for processing")
+            return None
+        except Exception as e:
+            logger.error(f"Failed to create processed data: {e}")
+            return None
     
     def get_data_info(self) -> dict:
         """Get information about available data sources."""
@@ -143,10 +127,15 @@ data_loader = DataLoader()
 
 @st.cache_data
 def load_energy_dataset():
-    """Load energy dataset with fallback strategies."""
+    """Load energy dataset from GitHub."""
     return data_loader.load_energy_data()
 
 @st.cache_data
 def load_weather_dataset():
-    """Load weather dataset with fallback strategies."""
+    """Load weather dataset from GitHub."""
     return data_loader.load_weather_data()
+
+@st.cache_data
+def load_processed_dataset():
+    """Load processed dataset."""
+    return data_loader.load_processed_data()
