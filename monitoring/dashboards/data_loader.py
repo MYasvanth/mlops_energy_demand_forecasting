@@ -118,37 +118,66 @@ class DataLoader:
     def load_processed_data(self) -> Optional[pd.DataFrame]:
         """Load processed dataset without cloud storage."""
         processed_file = self.processed_dir / "processed_energy_weather.csv"
-        
+
         # Strategy 1: Try local file first
         if processed_file.exists():
             try:
                 logger.info("Loading processed data from local file")
-                return pd.read_csv(processed_file)
+                df = pd.read_csv(processed_file)
+                # Ensure required columns exist
+                if 'total_load_actual' not in df.columns:
+                    logger.warning("Processed data missing 'total_load_actual' column")
+                    return None
+                return df
             except Exception as e:
                 logger.warning(f"Failed to load processed file: {e}")
-        
-        # Strategy 2: Generate from raw data (no DVC needed)
+
+        # Strategy 2: Try GitHub raw URL
+        github_url = "https://raw.githubusercontent.com/MYasvanth/mlops_energy_demand_forecasting/main/data/processed/processed_energy_weather.csv"
+        try:
+            logger.info("Loading processed data from GitHub")
+            df = pd.read_csv(github_url)
+            if 'total_load_actual' not in df.columns:
+                logger.warning("GitHub processed data missing 'total_load_actual' column")
+                return None
+            return df
+        except Exception as e:
+            logger.warning(f"Failed to load processed data from GitHub: {e}")
+
+        # Strategy 3: Generate minimal processed data from raw data
         try:
             energy_data = self.load_energy_data()
-            weather_data = self.load_weather_data()
-            
+
             if energy_data is not None:
-                # Simple processing: use energy data as base
-                logger.info("Generating processed data from raw energy data")
+                logger.info("Generating minimal processed data from raw energy data")
                 processed_data = energy_data.copy()
-                
-                # Add weather features if available
-                if weather_data is not None and len(weather_data) == len(energy_data):
-                    weather_cols = ['temperature', 'humidity', 'wind_speed']
-                    for col in weather_cols:
-                        if col in weather_data.columns:
-                            processed_data[col] = weather_data[col]
-                
+
+                # Rename columns to match expected format if needed
+                column_mapping = {}
+                if 'Total Load Actual' in processed_data.columns:
+                    column_mapping['Total Load Actual'] = 'total_load_actual'
+                elif 'total load actual' in processed_data.columns:
+                    column_mapping['total load actual'] = 'total_load_actual'
+
+                if column_mapping:
+                    processed_data = processed_data.rename(columns=column_mapping)
+
+                # Ensure we have the required column
+                if 'total_load_actual' not in processed_data.columns:
+                    # Look for any column that might contain load data
+                    load_cols = [col for col in processed_data.columns if 'load' in col.lower() and 'actual' in col.lower()]
+                    if load_cols:
+                        processed_data['total_load_actual'] = processed_data[load_cols[0]]
+                        logger.info(f"Using column '{load_cols[0]}' as 'total_load_actual'")
+                    else:
+                        logger.error("No suitable load column found in raw data")
+                        return None
+
                 return processed_data
-                
+
         except Exception as e:
             logger.error(f"Failed to generate processed data: {e}")
-        
+
         return None
     
     def get_data_info(self) -> dict:
