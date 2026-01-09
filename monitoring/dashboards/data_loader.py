@@ -140,20 +140,44 @@ class DataLoader:
             return None
     
     def load_processed_data(self) -> Optional[pd.DataFrame]:
-        """Generate processed data from raw data."""
+        """Load processed dataset with DVC and GitHub fallback."""
+        processed_file = self.processed_dir / "processed_energy_weather.csv"
+        
+        # Strategy 1: Try DVC pull if available
+        if self.check_dvc_available():
+            if self.pull_dvc_data() and processed_file.exists():
+                try:
+                    logger.info("Loading processed data from DVC")
+                    return pd.read_csv(processed_file)
+                except Exception as e:
+                    logger.warning(f"Failed to load processed after DVC pull: {e}")
+        
+        # Strategy 2: Try local file
+        if processed_file.exists():
+            try:
+                logger.info("Loading processed data from local file")
+                return pd.read_csv(processed_file)
+            except Exception as e:
+                logger.warning(f"Failed to load processed file: {e}")
+        
+        # Strategy 3: GitHub raw URL fallback
+        github_url = "https://raw.githubusercontent.com/MYasvanth/mlops_energy_demand_forecasting/main/data/processed/processed_energy_weather.csv"
+        try:
+            logger.info("Loading processed data from GitHub")
+            return pd.read_csv(github_url)
+        except Exception as e:
+            logger.warning(f"Failed to load processed from GitHub: {e}")
+        
+        # Strategy 4: Generate from raw data
         try:
             energy_data = self.load_energy_data()
-            weather_data = self.load_weather_data()
-            
             if energy_data is not None:
                 logger.info("Using energy data as processed data")
                 return energy_data
-            
-            logger.error("No data available for processing")
-            return None
         except Exception as e:
             logger.error(f"Failed to create processed data: {e}")
-            return None
+        
+        return None
     
     def get_data_info(self) -> dict:
         """Get information about available data sources."""
