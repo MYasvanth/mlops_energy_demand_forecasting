@@ -252,7 +252,17 @@ def main():
 
     # Load data
     with st.spinner("Loading data..."):
-        data = load_sample_data()
+        from data_loader import load_energy_dataset
+        data = load_energy_dataset()
+        
+        if data is None:
+            st.error("❌ Failed to load energy data. Please check data sources.")
+            st.stop()
+        
+        # Convert time column to datetime if needed
+        if 'time' in data.columns:
+            data['time'] = pd.to_datetime(data['time'])
+            data.set_index('time', inplace=True)
 
     # Sidebar
     selected_model, forecast_hours = create_sidebar()
@@ -276,7 +286,7 @@ def main():
 
     # Footer
     st.markdown("---")
-    st.markdown("*Built with Streamlit • Optimized for fast loading*")
+    st.markdown("*Built with Streamlit • Real data via DVC*")
 
 if __name__ == "__main__":
     main()

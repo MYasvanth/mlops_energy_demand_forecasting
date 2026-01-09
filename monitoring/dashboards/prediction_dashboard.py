@@ -23,6 +23,7 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.monitoring.evidently_monitoring import EvidentlyMonitor, MonitoringPipeline
+from data_loader import load_energy_dataset, load_weather_dataset, data_loader
 
 # Set page configuration
 st.set_page_config(
@@ -131,35 +132,53 @@ class PredictionDashboard:
         """Display data overview section."""
         st.header("📊 Data Overview")
 
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
 
         try:
-            # Load data
-            energy_data = self.load_data(self.energy_path)
-            weather_data = self.load_data(self.weather_path)
+            # Load data using data_loader
+            energy_data = load_energy_dataset()
+            weather_data = load_weather_dataset()
 
             with col1:
                 st.subheader("Energy Data")
-                if not energy_data.empty:
+                if energy_data is not None and not energy_data.empty:
                     st.metric("Records", len(energy_data))
-                    st.metric("Date Range",
-                            f"{energy_data.index.min().date()} to {energy_data.index.max().date()}")
+                    if 'time' in energy_data.columns:
+                        energy_data['time'] = pd.to_datetime(energy_data['time'])
+                        st.metric("Date Range",
+                                f"{energy_data['time'].min().date()} to {energy_data['time'].max().date()}")
                     st.metric("Target Variable", "total_load_actual")
+                else:
+                    st.metric("Status", "❌ Not loaded")
 
             with col2:
                 st.subheader("Weather Data")
-                if not weather_data.empty:
+                if weather_data is not None and not weather_data.empty:
                     st.metric("Records", len(weather_data))
                     st.metric("Features", len(weather_data.columns))
+                else:
+                    st.metric("Status", "❌ Not loaded")
 
             with col3:
                 st.subheader("Data Quality")
-                if not energy_data.empty:
+                if energy_data is not None and not energy_data.empty:
                     missing_pct = (energy_data.isnull().sum().sum() / len(energy_data)) * 100
                     st.metric("Missing Values", ".1f")
+                else:
+                    st.metric("Status", "N/A")
+
+            with col4:
+                st.subheader("Environment")
+                env_info = data_loader.get_data_info()
+                st.metric("Platform", env_info.get('environment', 'Unknown'))
+                if env_info.get('dvc_available'):
+                    st.metric("DVC", "✅ Available")
+                else:
+                    st.metric("DVC", "❌ Not available")
 
         except Exception as e:
             st.error(f"Error loading data overview: {e}")
+            st.info("Using data_loader for Streamlit Cloud compatibility")
 
     def display_time_series_plot(self):
         """Display interactive time series plot."""
