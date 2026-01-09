@@ -19,7 +19,7 @@ class DataLoader:
     """Handles data loading for different deployment environments."""
     
     def __init__(self):
-        self.data_dir = Path("data")
+        # Data is located two levels up from dashboards directory
         self.raw_dir = self.data_dir / "raw"
         self.processed_dir = self.data_dir / "processed"
         
