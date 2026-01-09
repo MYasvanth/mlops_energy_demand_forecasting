@@ -39,33 +39,9 @@ class DataLoader:
     
     @st.cache_data
     def pull_dvc_data(_self) -> bool:
-        """Pull data using DVC with Google Drive or other remotes."""
-        try:
-            # Set credentials from Streamlit secrets if available
-            if hasattr(st, 'secrets'):
-                # Google Cloud
-                if 'GOOGLE_APPLICATION_CREDENTIALS' in st.secrets:
-                    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = st.secrets['GOOGLE_APPLICATION_CREDENTIALS']
-                # AWS
-                if 'AWS_ACCESS_KEY_ID' in st.secrets:
-                    os.environ['AWS_ACCESS_KEY_ID'] = st.secrets['AWS_ACCESS_KEY_ID']
-                    os.environ['AWS_SECRET_ACCESS_KEY'] = st.secrets['AWS_SECRET_ACCESS_KEY']
-            
-            logger.info("Pulling data with DVC...")
-            result = subprocess.run(["dvc", "pull"], 
-                                  capture_output=True, text=True, timeout=300)
-            if result.returncode == 0:
-                logger.info("DVC pull successful")
-                return True
-            else:
-                logger.warning(f"DVC pull failed: {result.stderr}")
-                return False
-        except subprocess.TimeoutExpired:
-            logger.error("DVC pull timed out")
-            return False
-        except Exception as e:
-            logger.error(f"DVC pull error: {e}")
-            return False
+        """Skip DVC pull for free deployment."""
+        logger.info("Skipping DVC pull - using local/GitHub data only")
+        return False
     
     @st.cache_data
     def load_from_url(_self, url: str) -> Optional[pd.DataFrame]:
@@ -140,19 +116,10 @@ class DataLoader:
             return None
     
     def load_processed_data(self) -> Optional[pd.DataFrame]:
-        """Load processed dataset with DVC and GitHub fallback."""
+        """Load processed dataset without cloud storage."""
         processed_file = self.processed_dir / "processed_energy_weather.csv"
         
-        # Strategy 1: Try DVC pull if available
-        if self.check_dvc_available():
-            if self.pull_dvc_data() and processed_file.exists():
-                try:
-                    logger.info("Loading processed data from DVC")
-                    return pd.read_csv(processed_file)
-                except Exception as e:
-                    logger.warning(f"Failed to load processed after DVC pull: {e}")
-        
-        # Strategy 2: Try local file
+        # Strategy 1: Try local file first
         if processed_file.exists():
             try:
                 logger.info("Loading processed data from local file")
@@ -160,22 +127,27 @@ class DataLoader:
             except Exception as e:
                 logger.warning(f"Failed to load processed file: {e}")
         
-        # Strategy 3: GitHub raw URL fallback
-        github_url = "https://raw.githubusercontent.com/MYasvanth/mlops_energy_demand_forecasting/main/data/processed/processed_energy_weather.csv"
-        try:
-            logger.info("Loading processed data from GitHub")
-            return pd.read_csv(github_url)
-        except Exception as e:
-            logger.warning(f"Failed to load processed from GitHub: {e}")
-        
-        # Strategy 4: Generate from raw data
+        # Strategy 2: Generate from raw data (no DVC needed)
         try:
             energy_data = self.load_energy_data()
+            weather_data = self.load_weather_data()
+            
             if energy_data is not None:
-                logger.info("Using energy data as processed data")
-                return energy_data
+                # Simple processing: use energy data as base
+                logger.info("Generating processed data from raw energy data")
+                processed_data = energy_data.copy()
+                
+                # Add weather features if available
+                if weather_data is not None and len(weather_data) == len(energy_data):
+                    weather_cols = ['temperature', 'humidity', 'wind_speed']
+                    for col in weather_cols:
+                        if col in weather_data.columns:
+                            processed_data[col] = weather_data[col]
+                
+                return processed_data
+                
         except Exception as e:
-            logger.error(f"Failed to create processed data: {e}")
+            logger.error(f"Failed to generate processed data: {e}")
         
         return None
     
