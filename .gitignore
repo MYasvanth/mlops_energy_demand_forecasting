@@ -59,6 +59,7 @@ models/staging/
 # Data (tracked by DVC)
 data/raw/*.csv
 data/processed/*.csv
+!data/processed/processed_energy_weather.csv
 !data/raw/*.dvc
 !data/processed/*.dvc
 
