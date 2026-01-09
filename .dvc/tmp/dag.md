@@ -1,6 +1,5 @@
-```mermaid
-flowchart TD
-	node1["data\processed\processed_energy_weather.csv.dvc"]
-	node2["data\raw\energy_dataset.csv.dvc"]
-	node3["data\raw\weather_features.csv.dvc"]
-```
+Error: Command failed with exit code 255: dvc dag --md
+ERROR: output 'data\processed\processed_energy_weather.csv' is specified in:
+	- data_preprocessing
+	- data\processed\processed_energy_weather.csv.dvc
+Use `dvc remove` with any of the above targets to stop tracking the overlapping output.

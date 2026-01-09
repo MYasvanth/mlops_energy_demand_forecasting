@@ -23,6 +23,7 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.monitoring.evidently_monitoring import EvidentlyMonitor, MonitoringPipeline
+from data_loader import load_processed_dataset
 
 # Set page configuration
 st.set_page_config(
@@ -167,9 +168,9 @@ class PredictionDashboard:
 
         try:
             # Load processed data which contains the time series
-            processed_data = self.load_data(self.reference_data_path)
+            processed_data = load_processed_dataset()
 
-            if processed_data.empty:
+            if processed_data is None or processed_data.empty:
                 st.warning("⚠️ Processed data not found. Please ensure the data processing pipeline has been run.")
                 st.info("Run the data processing pipeline to generate the processed dataset.")
                 return
@@ -357,8 +358,8 @@ class PredictionDashboard:
 
         try:
             # Load processed data for prediction (contains the target column)
-            processed_data = self.load_data(self.reference_data_path)
-            if processed_data.empty:
+            processed_data = load_processed_dataset()
+            if processed_data is None or processed_data.empty:
                 processed_data = self.load_data(self.energy_path)
 
             if not processed_data.empty and 'total_load_actual' in processed_data.columns:
@@ -587,28 +588,18 @@ class PredictionDashboard:
     def run_monitoring_cycle(self):
         """Run a complete monitoring cycle using Evidently."""
         try:
-            # Initialize monitoring pipeline if not already done
-            if not Path(self.reference_data_path).exists():
-                st.error(f"Reference data not found at {self.reference_data_path}")
+            # Load reference data using data loader
+            reference_data = load_processed_dataset()
+            if reference_data is None or reference_data.empty:
+                st.error("Reference data not found. Please ensure the data processing pipeline has been run.")
                 return
 
             if self.monitor is None:
-                reference_data = pd.read_csv(self.reference_data_path)
-                if 'time' in reference_data.columns:
-                    reference_data['time'] = pd.to_datetime(reference_data['time'])
-                    reference_data.set_index('time', inplace=True)
-
                 self.monitor = EvidentlyMonitor(reference_data, 'total_load_actual')
 
-            # Load current data
-            if not Path(self.current_data_path).exists():
-                st.error(f"Current data not found at {self.current_data_path}")
-                return
-
-            current_data = pd.read_csv(self.current_data_path)
-            if 'time' in current_data.columns:
-                current_data['time'] = pd.to_datetime(current_data['time'])
-                current_data.set_index('time', inplace=True)
+            # Load current data (for now, use a subset of reference data as current data)
+            # In production, this would be new incoming data
+            current_data = reference_data.tail(min(1000, len(reference_data)))  # Use recent data as current
 
             # Run monitoring cycle
             output_dir = "reports/monitoring"

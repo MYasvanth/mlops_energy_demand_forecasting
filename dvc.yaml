@@ -1,0 +1,38 @@
+stages:
+  data_ingestion:
+    cmd: python src/data/ingestion.py
+    outs:
+      - data/raw/energy_dataset.csv
+      - data/raw/weather_features.csv
+
+  data_preprocessing:
+    cmd: python src/data/preprocessing.py
+    deps:
+      - data/raw/energy_dataset.csv
+      - data/raw/weather_features.csv
+    outs:
+      - data/processed/processed_energy_weather.csv
+
+  feature_engineering:
+    cmd: python src/features/feature_engineering.py
+    deps:
+      - data/processed/processed_energy_weather.csv
+    outs:
+      - data/processed/features.csv
+
+  train_model:
+    cmd: python src/models/train.py
+    deps:
+      - data/processed/features.csv
+    outs:
+      - models/production/model.pkl
+    metrics:
+      - reports/model_performance/train_metrics.json
+
+  evaluate_model:
+    cmd: python src/models/evaluation.py
+    deps:
+      - models/production/model.pkl
+      - data/processed/features.csv
+    metrics:
+      - reports/model_performance/eval_metrics.json
