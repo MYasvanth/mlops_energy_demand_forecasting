@@ -39,9 +39,19 @@ class DataLoader:
     
     @st.cache_data
     def pull_dvc_data(_self) -> bool:
-        """Pull data using DVC with Google Drive."""
+        """Pull data using DVC with Google Drive or other remotes."""
         try:
-            logger.info("Pulling data with DVC from Google Drive...")
+            # Set credentials from Streamlit secrets if available
+            if hasattr(st, 'secrets'):
+                # Google Cloud
+                if 'GOOGLE_APPLICATION_CREDENTIALS' in st.secrets:
+                    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = st.secrets['GOOGLE_APPLICATION_CREDENTIALS']
+                # AWS
+                if 'AWS_ACCESS_KEY_ID' in st.secrets:
+                    os.environ['AWS_ACCESS_KEY_ID'] = st.secrets['AWS_ACCESS_KEY_ID']
+                    os.environ['AWS_SECRET_ACCESS_KEY'] = st.secrets['AWS_SECRET_ACCESS_KEY']
+            
+            logger.info("Pulling data with DVC...")
             result = subprocess.run(["dvc", "pull"], 
                                   capture_output=True, text=True, timeout=300)
             if result.returncode == 0:
@@ -70,10 +80,28 @@ class DataLoader:
 
     
     def load_energy_data(self) -> Optional[pd.DataFrame]:
-        """Load energy dataset from GitHub raw URL."""
-        # GitHub raw URL for energy dataset
+        """Load energy dataset with DVC and GitHub fallback."""
+        energy_file = self.raw_dir / "energy_dataset.csv"
+        
+        # Strategy 1: Try DVC pull if available
+        if self.check_dvc_available():
+            if self.pull_dvc_data() and energy_file.exists():
+                try:
+                    logger.info("Loading energy data from DVC")
+                    return pd.read_csv(energy_file)
+                except Exception as e:
+                    logger.warning(f"Failed to load after DVC pull: {e}")
+        
+        # Strategy 2: Try local file
+        if energy_file.exists():
+            try:
+                logger.info("Loading energy data from local file")
+                return pd.read_csv(energy_file)
+            except Exception as e:
+                logger.warning(f"Failed to load local file: {e}")
+        
+        # Strategy 3: GitHub raw URL fallback
         github_url = "https://raw.githubusercontent.com/MYasvanth/mlops_energy_demand_forecasting/main/data/raw/energy_dataset.csv"
-
         try:
             logger.info("Loading energy data from GitHub")
             return pd.read_csv(github_url)
@@ -82,10 +110,28 @@ class DataLoader:
             return None
     
     def load_weather_data(self) -> Optional[pd.DataFrame]:
-        """Load weather dataset from GitHub raw URL."""
-        # GitHub raw URL for weather dataset
-        github_url = "https://raw.githubusercontent.com/MYasvanth/mlops_energy_demand_forecasting/main/data/raw/weather_features.csv"
+        """Load weather dataset with DVC and GitHub fallback."""
+        weather_file = self.raw_dir / "weather_features.csv"
         
+        # Strategy 1: Try DVC pull if available
+        if self.check_dvc_available():
+            if self.pull_dvc_data() and weather_file.exists():
+                try:
+                    logger.info("Loading weather data from DVC")
+                    return pd.read_csv(weather_file)
+                except Exception as e:
+                    logger.warning(f"Failed to load weather after DVC pull: {e}")
+        
+        # Strategy 2: Try local file
+        if weather_file.exists():
+            try:
+                logger.info("Loading weather data from local file")
+                return pd.read_csv(weather_file)
+            except Exception as e:
+                logger.warning(f"Failed to load local weather file: {e}")
+        
+        # Strategy 3: GitHub raw URL fallback
+        github_url = "https://raw.githubusercontent.com/MYasvanth/mlops_energy_demand_forecasting/main/data/raw/weather_features.csv"
         try:
             logger.info("Loading weather data from GitHub")
             return pd.read_csv(github_url)
