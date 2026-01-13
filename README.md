@@ -29,57 +29,6 @@ Data Sources (CSV, API, DB) -> Ingestion -> Preprocessing -> Feature Engineering
                                    ZenML     Prefect       MLflow         DVC         Docker       Kubernetes    Grafana
 ```
 
-## Setup Instructions
-
-### Prerequisites
-
-- Python 3.9+
-- Git
-- Docker (for containerization)
-- Kubernetes (for deployment, optional)
-
-### 1. Clone the Repository
-
-```bash
-git clone https://github.com/your-repo/mlops_energy_demand_forecasting.git
-cd mlops_energy_demand_forecasting
-```
-
-### 2. Set Up Virtual Environment
-
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
-
-### 3. Install Dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### 4. Set Up DVC
-
-```bash
-dvc init
-dvc add data/raw/energy_dataset.csv
-dvc add data/raw/weather_features.csv
-```
-
-### 5. Configure ZenML
-
-```bash
-zenml init
-zenml stack set default
-```
-
-### 6. Configure Prefect
-
-```bash
-prefect config set PREFECT_API_URL http://localhost:4200/api
-prefect server start
-```
-
 ## Usage
 
 ### Running the Training Pipeline
@@ -115,7 +64,6 @@ python scripts/monitoring/monitor_script.py
 - **Experiment Tracking**: MLflow for model metrics and artifacts.
 - **Pipeline Robustness**: ZenML for step-based pipelines, Prefect for scheduling.
 - **CI/CD**: GitHub Actions for automated testing and deployment.
-- **Security**: Secrets management, access controls.
 - **Monitoring**: Alerts for drift, performance dashboards.
 
 ## Configuration
@@ -134,22 +82,6 @@ Run tests with:
 pytest tests/
 ```
 
-## Deployment
-
-### Docker
-
-```bash
-docker build -t energy-forecast .
-docker run energy-forecast
-```
-
-### Kubernetes
-
-```bash
-kubectl apply -f deployment/kubernetes/
-```
-
-### Cloud Deployment (Optional)
 
 The project supports optional deployment to cloud platforms such as AWS, Azure, or GCP. Refer to the deployment/cloud/ directory for platform-specific configurations.
 
@@ -160,12 +92,6 @@ The project supports optional deployment to cloud platforms such as AWS, Azure, 
 - Logs: Centralized in `logs/`
 - Drift Detection: Evidently for data drift detection and model performance monitoring.
 
-## Contributing
-
-1. Fork the repository.
-2. Create a feature branch.
-3. Make changes with tests.
-4. Submit a pull request.
 
 ## License
 
