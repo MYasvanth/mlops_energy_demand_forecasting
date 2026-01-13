@@ -95,5 +95,4 @@ The project supports optional deployment to cloud platforms such as AWS, Azure, 
 
 ## License
 
-MIT License. See LICENSE file for details.
-ct [your-email@example.com].
+MIT License.
