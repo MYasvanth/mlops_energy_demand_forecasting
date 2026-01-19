@@ -26,7 +26,7 @@ The system forecasts energy demand based on historical data, weather features, a
 ```
 Data Sources (CSV, API, DB) -> Ingestion -> Preprocessing -> Feature Engineering -> Model Training -> Evaluation -> Deployment -> Monitoring
                                       |           |              |              |              |              |              |
-                                   ZenML     Prefect       MLflow         DVC         Docker       Kubernetes    Grafana
+                                   ZenML     Prefect       MLflow         DVC         Docker       Kubernetes   
 ```
 
 ## Usage
