@@ -82,9 +82,6 @@ Run tests with:
 pytest tests/
 ```
 
-
-The project supports optional deployment to cloud platforms such as AWS, Azure, or GCP. Refer to the deployment/cloud/ directory for platform-specific configurations.
-
 ## Monitoring
 
 - Dashboards: Streamlit for interactive model predictions and monitoring visualization.
