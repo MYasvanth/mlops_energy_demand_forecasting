@@ -87,7 +87,7 @@ The project supports optional deployment to cloud platforms such as AWS, Azure, 
 
 ## Monitoring
 
-- Dashboards: Grafana at `http://localhost:3000`, Streamlit for interactive model predictions and monitoring visualization.
+- Dashboards: Streamlit for interactive model predictions and monitoring visualization.
 - Alerts: Configured in `monitoring/alerts/alert_config.yaml`
 - Logs: Centralized in `logs/`
 - Drift Detection: Evidently for data drift detection and model performance monitoring.
