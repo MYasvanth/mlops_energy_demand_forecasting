@@ -48,3 +48,7 @@ prophet
 tensorflow
 statsmodels
 prefect
+
+# Gradient Boosting Models
+xgboost
+lightgbm
