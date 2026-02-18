@@ -1,13 +1,16 @@
-# API Requirements - Updated for Python 3.11+
+# API Requirements - Python 3.11 required for TensorFlow
 fastapi>=0.110.0
 uvicorn[standard]>=0.29.0
 pydantic>=2.8.0
 
-# Core ML
-numpy>=2.0.0
-pandas>=2.2.0
-scikit-learn>=1.5.0
+# Core ML - numpy 1.x required for TensorFlow
+numpy>=1.24.0,<2.0.0
+pandas>=2.0.0,<2.3.0
+scikit-learn>=1.4.0
 joblib>=1.3.0
+
+# Deep Learning - specific version for Python 3.11 compatibility
+tensorflow==2.15.0
 
 # MLOps
 mlflow>=2.8.0
@@ -28,6 +31,3 @@ evidently>=0.4.18
 python-multipart>=0.0.9
 pyyaml>=6.0
 python-dotenv>=1.0.0
-
-# TensorFlow not compatible with numpy 2.x yet - skip for API deployment
-tensorflow>=2.13.0,<2.16.0
