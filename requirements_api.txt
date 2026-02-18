@@ -30,4 +30,4 @@ pyyaml>=6.0
 python-dotenv>=1.0.0
 
 # TensorFlow not compatible with numpy 2.x yet - skip for API deployment
-# tensorflow>=2.13.0,<2.16.0
+tensorflow>=2.13.0,<2.16.0
