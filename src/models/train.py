@@ -2,8 +2,15 @@
 Model Training Module
 
 This module handles model training for energy demand forecasting using various algorithms
-including ARIMA, Prophet, and LSTM with hyperparameter tuning using Optuna.
+including ARIMA, Prophet, LSTM, XGBoost, and LightGBM with hyperparameter tuning using Optuna.
+
+Implements the Strategy pattern for unified model training interface:
+- Traditional models: ARIMA, Prophet, LSTM
+- Gradient Boosting Models: XGBoost, LightGBM (using BaseTimeSeriesModel)
 """
+
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Suppress TensorFlow warnings
 
 import logging
 from typing import Dict, List, Optional, Tuple, Union, Any
@@ -29,21 +36,50 @@ from pathlib import Path
 import mlflow
 import mlflow.sklearn
 
+# Configure logging first
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # Time series models
 from statsmodels.tsa.arima.model import ARIMA
 from prophet import Prophet
-import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Dropout
-from tensorflow.keras.callbacks import EarlyStopping
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# TensorFlow/Keras imports for LSTM
+try:
+    import tensorflow as tf
+    from tensorflow.keras.models import Sequential
+    from tensorflow.keras.layers import LSTM, Dense, Dropout
+    from tensorflow.keras.callbacks import EarlyStopping
+    TF_AVAILABLE = True
+    logger.info(f"TensorFlow {tf.__version__} loaded successfully")
+except ImportError as e:
+    TF_AVAILABLE = False
+    logger.warning(f"TensorFlow not available: {e}. LSTM models will not be available.")
+except Exception as e:
+    TF_AVAILABLE = False
+    logger.warning(f"TensorFlow import failed with error: {e}. LSTM models will not be available.")
+
+# Gradient Boosting Models - Strategy pattern imports
+from .base import BaseTimeSeriesModel, ModelRegistry
+
+# Try to import GBM models (may fail if xgboost/lightgbm not installed)
+GBM_AVAILABLE = True
+try:
+    from .xgboost_model import XGBoostTimeSeriesModel
+    from .lightgbm_model import LightGBMTimeSeriesModel
+except ImportError:
+    GBM_AVAILABLE = False
+    logger.warning("XGBoost/LightGBM not available. GBM models will be skipped.")
 
 # Suppress warnings
 import warnings
 warnings.filterwarnings('ignore')
+
+# Register GBM models with ModelRegistry if available
+if GBM_AVAILABLE:
+    # Models are already registered in their respective modules when imported
+    # But we ensure they're registered here for clarity
+    pass
 
 
 class TimeSeriesTrainer:
@@ -113,7 +149,8 @@ class TimeSeriesTrainer:
 
     def prepare_data_lstm(self, df: pd.DataFrame, target_col: str, lookback: int = 24) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
-        Prepare data for LSTM model.
+        Prepare data for LSTM model WITHOUT DATA LEAKAGE.
+        CRITICAL: Split data BEFORE scaling to prevent test data leakage.
 
         Args:
             df (pd.DataFrame): Input DataFrame.
@@ -124,42 +161,57 @@ class TimeSeriesTrainer:
             Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]: X_train, y_train, X_test, y_test.
         """
         series = df[target_col].dropna().values.reshape(-1, 1)
-        scaled_series = self.scaler.fit_transform(series).flatten()
-
-        X, y = [], []
-        for i in range(len(scaled_series) - lookback):
-            X.append(scaled_series[i:i + lookback])
-            y.append(scaled_series[i + lookback])
-
-        X = np.array(X)
-        y = np.array(y)
-
-        train_size = int(len(X) * 0.8)
-        X_train, X_test = X[:train_size], X[train_size:]
-        y_train, y_test = y[:train_size], y[train_size:]
-
-        return X_train, y_train, X_test, y_test
+        
+        # SPLIT FIRST to avoid leakage
+        train_size = int(len(series) * 0.8)
+        train_series = series[:train_size]
+        test_series = series[train_size:]
+        
+        # Fit scaler on TRAIN ONLY
+        self.scaler.fit(train_series)
+        train_scaled = self.scaler.transform(train_series).flatten()
+        test_scaled = self.scaler.transform(test_series).flatten()
+        
+        # Create sequences for train
+        X_train, y_train = [], []
+        for i in range(len(train_scaled) - lookback):
+            X_train.append(train_scaled[i:i + lookback])
+            y_train.append(train_scaled[i + lookback])
+        
+        # Create sequences for test
+        X_test, y_test = [], []
+        for i in range(len(test_scaled) - lookback):
+            X_test.append(test_scaled[i:i + lookback])
+            y_test.append(test_scaled[i + lookback])
+        
+        return np.array(X_train), np.array(y_train), np.array(X_test), np.array(y_test)
 
     def objective_arima(self, trial: optuna.Trial, train_data: pd.Series) -> float:
         """
-        Objective function for ARIMA hyperparameter tuning.
+        Objective function for ARIMA hyperparameter tuning WITHOUT LEAKAGE.
+        Uses walk-forward validation on training data only.
 
         Args:
             trial (optuna.Trial): Optuna trial object.
             train_data (pd.Series): Training data.
 
         Returns:
-            float: Mean absolute error.
+            float: Mean absolute error from walk-forward validation.
         """
         p = trial.suggest_int('p', 0, 5)
         d = trial.suggest_int('d', 0, 2)
         q = trial.suggest_int('q', 0, 5)
 
         try:
-            model = ARIMA(train_data, order=(p, d, q))
+            # Use first 80% for fitting, last 20% for validation
+            val_size = len(train_data) // 5
+            train_cv = train_data[:-val_size]
+            val_cv = train_data[-val_size:]
+            
+            model = ARIMA(train_cv, order=(p, d, q))
             model_fit = model.fit()
-            predictions = model_fit.forecast(steps=len(train_data) // 10)  # Forecast on subset for speed
-            mae = mean_absolute_error(train_data[-len(predictions):], predictions)
+            predictions = model_fit.forecast(steps=len(val_cv))
+            mae = mean_absolute_error(val_cv, predictions)
             return mae
         except:
             return float('inf')
@@ -213,7 +265,7 @@ class TimeSeriesTrainer:
 
     def train_prophet(self, df: pd.DataFrame, tune_hyperparams: bool = True) -> Dict[str, Any]:
         """
-        Train Prophet model.
+        Train Prophet model WITHOUT DATA LEAKAGE.
 
         Args:
             df (pd.DataFrame): Input DataFrame.
@@ -227,36 +279,46 @@ class TimeSeriesTrainer:
         train, test = self.prepare_data_prophet(df, self.target_column)
 
         if tune_hyperparams:
-            # Simple hyperparameter tuning for Prophet
+            # Use CV on TRAIN ONLY to avoid leakage
             best_mae = float('inf')
             best_params = {'changepoint_prior_scale': 0.05, 'seasonality_prior_scale': 10}
+            
+            # Split train into train_cv and val_cv
+            cv_split = int(len(train) * 0.8)
+            train_cv = train.iloc[:cv_split]
+            val_cv = train.iloc[cv_split:]
 
             for cps in [0.01, 0.05, 0.1]:
                 for sps in [1, 10, 20]:
-                    model = Prophet(changepoint_prior_scale=cps, seasonality_prior_scale=sps)
-                    model.fit(train)
-                    future = model.make_future_dataframe(periods=len(test), freq='H')
-                    forecast = model.predict(future)
-                    pred = forecast['yhat'][-len(test):].values
-                    mae = mean_absolute_error(test['y'], pred)
-                    if mae < best_mae:
-                        best_mae = mae
-                        best_params = {'changepoint_prior_scale': cps, 'seasonality_prior_scale': sps}
+                    try:
+                        model = Prophet(changepoint_prior_scale=cps, seasonality_prior_scale=sps, 
+                                      daily_seasonality=True, weekly_seasonality=True, yearly_seasonality=True)
+                        model.fit(train_cv)
+                        # Predict only on validation period
+                        val_forecast = model.predict(val_cv[['ds']])
+                        mae = mean_absolute_error(val_cv['y'], val_forecast['yhat'])
+                        if mae < best_mae:
+                            best_mae = mae
+                            best_params = {'changepoint_prior_scale': cps, 'seasonality_prior_scale': sps}
+                    except:
+                        continue
 
             self.best_params = best_params
         else:
             self.best_params = {'changepoint_prior_scale': 0.05, 'seasonality_prior_scale': 10}
 
-        self.model = Prophet(**self.best_params)
+        # Train final model on full training set
+        self.model = Prophet(**self.best_params, daily_seasonality=True, 
+                           weekly_seasonality=True, yearly_seasonality=True)
         self.model.fit(train)
 
-        future = self.model.make_future_dataframe(periods=len(test), freq='H')
-        forecast = self.model.predict(future)
-        predictions = forecast['yhat'][-len(test):].values
+        # Predict ONLY on test dates (no future dataframe needed)
+        test_forecast = self.model.predict(test[['ds']])
+        predictions = test_forecast['yhat'].values
 
-        metrics = self.calculate_metrics(test['y'], predictions)
+        metrics = self.calculate_metrics(test['y'].values, predictions)
 
-        logger.info(f"Prophet training completed. MAE: {metrics['mae']:.4f}")
+        logger.info(f"Prophet training completed. MAE: {metrics['mae']:.4f}, R2: {metrics['r2']:.4f}")
         return {
             'model': self.model,
             'metrics': metrics,
@@ -278,6 +340,9 @@ class TimeSeriesTrainer:
         Returns:
             float: Validation mean absolute error.
         """
+        if not TF_AVAILABLE:
+            raise ImportError("TensorFlow is not available. Install with: pip install tensorflow")
+            
         units = trial.suggest_int('units', 32, 128)
         dropout = trial.suggest_float('dropout', 0.1, 0.5)
         learning_rate = trial.suggest_float('learning_rate', 1e-4, 1e-2, log=True)
@@ -314,6 +379,17 @@ class TimeSeriesTrainer:
             Dict[str, Any]: Training results.
         """
         logger.info("Training LSTM model...")
+        
+        if not TF_AVAILABLE:
+            error_msg = "TensorFlow is not available. Install with: pip install tensorflow"
+            logger.error(error_msg)
+            return {
+                'model': None,
+                'scaler': self.scaler,
+                'metrics': {'mae': float('inf'), 'mse': float('inf'), 'rmse': float('inf'), 'r2': float('-inf')},
+                'params': {},
+                'error': error_msg
+            }
 
         try:
             # Data preparation with validation
@@ -605,6 +681,12 @@ class TimeSeriesTrainer:
             return self.train_prophet(df, tune_hyperparams)
         elif self.model_type == 'lstm':
             return self.train_lstm(df, tune_hyperparams)
+        elif self.model_type in ['xgboost', 'lightgbm']:
+            # For GBM models, use train_gbm_models function
+            if not GBM_AVAILABLE:
+                raise ImportError(f"{self.model_type} not available. Install with: pip install {self.model_type}")
+            results = train_gbm_models(df, self.target_column, [self.model_type])
+            return results.get(self.model_type, {'model': None, 'metrics': {}, 'params': {}})
         else:
             raise ValueError(f"Unsupported model type: {self.model_type}")
 
@@ -638,18 +720,306 @@ def create_model_comparison(results: Dict[str, Dict[str, Any]]) -> Dict[str, Any
     }
 
 
+def train_gbm_models(df: pd.DataFrame, target_column: str = 'total_load_actual',
+                    models: List[str] = ['xgboost', 'lightgbm'],
+                    n_splits: int = 5, n_trials: int = 10) -> Dict[str, Dict[str, Any]]:
+    """
+    Train Gradient Boosting Models (XGBoost, LightGBM) using the Strategy pattern.
+    
+    This function uses ModelRegistry to create and train GBM models that implement
+    the BaseTimeSeriesModel interface, ensuring consistency and extensibility.
+
+    Args:
+        df (pd.DataFrame): Input DataFrame.
+        target_column (str): Target column name.
+        models (List[str]): List of GBM model types to train ('xgboost', 'lightgbm').
+        n_splits (int): Number of time-series CV splits.
+        n_trials (int): Number of Optuna trials for hyperparameter tuning.
+
+    Returns:
+        Dict[str, Dict[str, Any]]: Results for each model.
+    """
+    import mlflow
+    
+    if not GBM_AVAILABLE:
+        logger.warning("GBM models not available. Install xgboost and lightgbm to use this feature.")
+        return {}
+    
+    # End any existing run before starting
+    if mlflow.active_run():
+        mlflow.end_run()
+        
+    # Set MLflow experiment
+    mlflow.set_experiment("Energy Demand Forecasting - GBM Models")
+
+    results = {}
+    registered_models = {}
+    
+    # Use GBM Feature Engineer for consistent feature engineering
+    from .gbm_features import GBMFeatureEngineer
+    
+    # Initialize feature engineer
+    feature_engineer = GBMFeatureEngineer(
+        target_column=target_column,
+        lags=[1, 2, 3, 6, 12, 24, 48, 168],
+        rolling_windows=[3, 6, 12, 24, 48],
+        add_time_features=True
+    )
+    
+    # Prepare train/test split with proper feature engineering
+    logger.info("Preparing train/test split with GBM feature engineering...")
+    (X_train_full, y_train_full), (X_test, y_test) = feature_engineer.prepare_train_test_split(df, train_size=0.8)
+    
+    logger.info(f"Train samples: {len(X_train_full)}, Test samples: {len(X_test)}")
+    logger.info(f"Number of features: {X_train_full.shape[1]}")
+    logger.info(f"Feature names: {list(X_train_full.columns)[:10]}...")  # Show first 10 features
+
+    for model_type in models:
+        logger.info(f"Training {model_type} model using Strategy pattern...")
+        
+        # Skip if model not available
+        if model_type not in ModelRegistry.available_models():
+            logger.warning(f"Model {model_type} not available in ModelRegistry")
+            continue
+        
+        # Ensure no active run before starting new one
+        if mlflow.active_run():
+            mlflow.end_run()
+
+        try:
+            with mlflow.start_run(run_name=f"{model_type}_gbm_training") as run:
+                # Create model using ModelRegistry (Strategy pattern)
+                model = ModelRegistry.create(
+                    model_type,
+                    target_column=target_column,
+                    n_splits=n_splits,
+                    n_trials=n_trials
+                )
+                
+                # Log parameters
+                mlflow.log_param("model_type", model_type)
+                mlflow.log_param("target_column", target_column)
+                mlflow.log_param("n_splits", n_splits)
+                mlflow.log_param("n_trials", n_trials)
+                mlflow.log_param("n_features", X_train_full.shape[1])
+                
+                # Fit the model with already engineered features
+                # Pass the feature engineer to avoid double feature engineering
+                model.feature_engineer = feature_engineer
+                model.feature_names = list(X_train_full.columns)
+                
+                # Train the model directly on engineered features
+                model._train_on_features(X_train_full, y_train_full, X_test, y_test)
+                
+                # Make predictions on test set
+                y_pred = model.model.predict(X_test)
+                y_true = y_test.values
+                
+                # Calculate metrics
+                metrics = {
+                    'mae': mean_absolute_error(y_true, y_pred),
+                    'mse': mean_squared_error(y_true, y_pred),
+                    'rmse': np.sqrt(mean_squared_error(y_true, y_pred)),
+                    'r2': r2_score(y_true, y_pred)
+                }
+                
+                # Add energy-specific metrics
+                energy_metrics = energy_specific_metrics(y_true, y_pred)
+                metrics.update(energy_metrics)
+                
+                # Log metrics
+                mlflow.log_metric("mae", metrics['mae'])
+                mlflow.log_metric("mse", metrics['mse'])
+                mlflow.log_metric("rmse", metrics['rmse'])
+                mlflow.log_metric("r2", metrics['r2'])
+                
+                # Log best hyperparameters
+                if model.best_params:
+                    for param, value in model.best_params.items():
+                        mlflow.log_param(f"best_{param}", value)
+                
+                # Save model and feature engineer
+                model_path = f"models/{model_type}_gbm_model"
+                os.makedirs("models", exist_ok=True)
+                
+                # Save the trained model
+                import joblib
+                joblib.dump(model.model, model_path + '.joblib')
+                mlflow.log_artifact(model_path + '.joblib')
+                
+                # Save the feature engineer
+                feature_engineer.save(model_path + '_feature_engineer.joblib')
+                mlflow.log_artifact(model_path + '_feature_engineer.joblib')
+                
+                # Log feature importance
+                importance = model.get_feature_importance()
+                if importance:
+                    importance_df = pd.DataFrame([
+                        {'feature': k, 'importance': v} 
+                        for k, v in importance.items()
+                    ]).sort_values('importance', ascending=False)
+                    
+                    # Log top 10 features
+                    for idx, row in importance_df.head(10).iterrows():
+                        mlflow.log_metric(f"importance_{row['feature']}", row['importance'])
+                
+                # Register model in MLflow
+                model_name = f"energy_demand_{model_type}_gbm_model"
+                try:
+                    # Use sklearn log_model for GBM models
+                    mlflow.sklearn.log_model(
+                        sk_model=model.model,
+                        artifact_path=f"{model_type}_model",
+                        registered_model_name=model_name,
+                        pyfunc_predict_fn="predict"
+                    )
+                    
+                    client = mlflow.tracking.MlflowClient()
+                    registered_model = client.get_registered_model(model_name)
+                    
+                    registered_models[model_type] = {
+                        'model_name': model_name,
+                        'version': len(registered_model.latest_versions) if registered_model else 'N/A',
+                        'run_id': run.info.run_id,
+                        'mae': metrics['mae']
+                    }
+                    
+                    logger.info(f"GBM Model {model_name} registered successfully")
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to register {model_type} GBM model: {e}")
+                    registered_models[model_type] = {
+                        'model_name': model_name,
+                        'version': 'Failed',
+                        'run_id': run.info.run_id,
+                        'mae': metrics['mae'],
+                        'error': str(e)
+                    }
+                
+                results[model_type] = {
+                    'model': model,
+                    'metrics': metrics,
+                    'params': model.best_params,
+                    'feature_importance': importance
+                }
+                
+                logger.info(f"{model_type.upper()} training completed. MAE: {metrics['mae']:.4f}")
+                
+        except Exception as e:
+            logger.error(f"Failed to train {model_type} model: {e}")
+            results[model_type] = {
+                'model': None,
+                'metrics': {'mae': float('inf'), 'mse': float('inf'), 'rmse': float('inf'), 'r2': float('-inf')},
+                'params': {},
+                'error': str(e)
+            }
+
+    # Compare results and find best model
+    if results:
+        comparison = {k: v['metrics']['mae'] for k, v in results.items() if 'metrics' in v and 'mae' in v['metrics']}
+        if comparison:
+            best_model = min(comparison, key=comparison.get)
+            best_mae = comparison[best_model]
+            
+            logger.info(f"Best GBM model: {best_model} with MAE: {best_mae:.4f}")
+            
+            # Promote best model to production
+            if best_model in registered_models and registered_models[best_model]['version'] != 'Failed':
+                try:
+                    model_name = registered_models[best_model]['model_name']
+                    version = registered_models[best_model]['version']
+                    
+                    client = mlflow.tracking.MlflowClient()
+                    client.transition_model_version_stage(
+                        name=model_name,
+                        version=str(version),
+                        stage="Production"
+                    )
+                    
+                    registered_models[best_model]['stage'] = 'Production'
+                    logger.info(f"GBM Model {model_name} promoted to Production")
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to promote {best_model} to production: {e}")
+            
+            results['best_model'] = best_model
+            results['best_mae'] = best_mae
+    
+    results['model_registry'] = registered_models
+    
+    return results
+
+
 def train_multiple_models(df: pd.DataFrame, target_column: str = 'total_load_actual',
-                         models: List[str] = ['arima', 'prophet', 'lstm']) -> Dict[str, Dict[str, Any]]:
+                         models: List[str] = ['arima', 'prophet', 'lstm', 'xgboost', 'lightgbm']) -> Dict[str, Dict[str, Any]]:
     """
     Train multiple models and compare their performance with MLflow model registration.
+    
+    Supports both traditional models (ARIMA, Prophet, LSTM) and Gradient Boosting Models
+    (XGBoost, LightGBM) using a unified interface.
 
     Args:
         df (pd.DataFrame): Input DataFrame.
         target_column (str): Target column name.
         models (List[str]): List of model types to train.
+                          Traditional: 'arima', 'prophet', 'lstm'
+                          GBM (Strategy pattern): 'xgboost', 'lightgbm'
 
     Returns:
         Dict[str, Dict[str, Any]]: Results for each model.
+    """
+    import mlflow
+    
+    # Separate traditional models from GBM models
+    traditional_models = [m for m in models if m in ['arima', 'prophet', 'lstm']]
+    gbm_models = [m for m in models if m in ['xgboost', 'lightgbm']]
+    
+    results = {}
+    
+    # Train traditional models
+    if traditional_models:
+        logger.info(f"Training traditional models: {traditional_models}")
+        traditional_results = _train_traditional_models(df, target_column, traditional_models)
+        results.update(traditional_results)
+    
+    # Train GBM models using Strategy pattern
+    if gbm_models and GBM_AVAILABLE:
+        logger.info(f"Training GBM models using Strategy pattern: {gbm_models}")
+        gbm_results = train_gbm_models(df, target_column, gbm_models)
+        results.update(gbm_results)
+    elif gbm_models and not GBM_AVAILABLE:
+        logger.warning(f"GBM models requested but not available: {gbm_models}")
+    
+    # Find best model overall
+    if results:
+        comparison = {}
+        for model_type, result in results.items():
+            if isinstance(result, dict) and 'metrics' in result and 'mae' in result['metrics']:
+                if np.isfinite(result['metrics']['mae']):
+                    comparison[model_type] = result['metrics']['mae']
+        
+        if comparison:
+            best_model = min(comparison, key=comparison.get)
+            best_mae = comparison[best_model]
+            results['best_model'] = best_model
+            results['best_mae'] = best_mae
+            logger.info(f"Best model overall: {best_model} with MAE: {best_mae:.4f}")
+    
+    return results
+
+
+def _train_traditional_models(df: pd.DataFrame, target_column: str, 
+                              models: List[str]) -> Dict[str, Dict[str, Any]]:
+    """
+    Internal helper to train traditional models (ARIMA, Prophet, LSTM).
+    
+    Args:
+        df: Input DataFrame
+        target_column: Target column name
+        models: List of model types
+        
+    Returns:
+        Dictionary of results
     """
     import mlflow
     
@@ -850,59 +1220,8 @@ def train_multiple_models(df: pd.DataFrame, target_column: str = 'total_load_act
                     'error': str(e)
                 }
 
-    # Compare results and promote best model to production
-    comparison = {}
-    for model_type, result in results.items():
-        comparison[model_type] = result['metrics']['mae']
-
-    best_model = min(comparison, key=comparison.get)
-    best_mae = comparison[best_model]
-
-    logger.info(f"Best model: {best_model} with MAE: {best_mae:.4f}")
-
-    # Promote best model to production stage
-    if best_model in registered_models and registered_models[best_model]['version'] != 'Failed':
-        try:
-            model_name = registered_models[best_model]['model_name']
-            version = registered_models[best_model]['version']
-
-            # Transition to production
-            client = mlflow.tracking.MlflowClient()
-            try:
-                client.transition_model_version_stage(
-                    name=model_name,
-                    version=str(version),
-                    stage="Production"
-                )
-            except Exception as transition_error:
-                # Handle the case where version might be a Metric object
-                logger.warning(f"Failed to transition model version: {transition_error}")
-                # Try to get the latest version instead
-                latest_versions = client.get_latest_versions(model_name, stages=["None"])
-                if latest_versions:
-                    latest_version = latest_versions[0].version
-                    client.transition_model_version_stage(
-                        name=model_name,
-                        version=latest_version,
-                        stage="Production"
-                    )
-                    registered_models[best_model]['version'] = latest_version
-                else:
-                    raise transition_error
-
-            logger.info(f"Model {model_name} version {version} promoted to Production stage")
-
-            # Update registered model info
-            registered_models[best_model]['stage'] = 'Production'
-
-        except Exception as e:
-            logger.warning(f"Failed to promote {best_model} to production: {e}")
-
-    # Log overall results
     results['model_registry'] = registered_models
-    results['best_model'] = best_model
-    results['best_mae'] = best_mae
-
+    
     return results
 
 
