@@ -20,8 +20,19 @@ from pydantic import BaseModel, Field, validator
 import joblib
 
 # Import project modules
-from src.models.predict import TimeSeriesPredictor, EnsemblePredictor
-from src.monitoring.evidently_monitoring import EvidentlyMonitor
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+try:
+    from src.models.predict import TimeSeriesPredictor, EnsemblePredictor
+    from src.monitoring.evidently_monitoring import EvidentlyMonitor
+    from src.deployment.model_registry import ModelRegistry
+except ImportError:
+    import os
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+    from src.models.predict import TimeSeriesPredictor, EnsemblePredictor
+    from src.monitoring.evidently_monitoring import EvidentlyMonitor
+    from src.deployment.model_registry import ModelRegistry
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -56,6 +67,13 @@ class PredictionRequest(BaseModel):
         return v
 
 
+class EnsemblePredictionRequest(BaseModel):
+    """Request model for ensemble predictions."""
+    hours_ahead: int = Field(24, ge=1, le=168, description="Hours to forecast ahead")
+    recent_data: Optional[List[Dict]] = Field(None, description="Recent data for prediction")
+    data_path: Optional[str] = Field(None, description="Path to data file")
+
+
 class PredictionResponse(BaseModel):
     """Response model for predictions."""
     predictions: List[float]
@@ -79,45 +97,54 @@ async def startup_event():
     global models, monitor
 
     logger.info("Starting Energy Demand Forecasting API...")
+    logger.info(f"Loading models from: {ModelRegistry.PRODUCTION_DIR}")
 
     try:
-        # Load trained models with fallback paths
-        model_dirs = [
-            Path("models/production"),
-            Path("models/staging"),
-            Path("models")  # Fallback to main models directory
-        ]
-
+        # Validate production deployment
+        missing = ModelRegistry.validate_deployment()
+        if missing:
+            logger.warning(f"Missing model files: {missing}")
+        
+        # Load models using registry
+        model_dirs = [ModelRegistry.PRODUCTION_DIR, Path("models")]
+        
         loaded_models = 0
         for model_dir in model_dirs:
             if model_dir.exists():
                 logger.info(f"Checking for models in {model_dir}")
                 
-                # Check for specific model files
-                model_files = {
+                # Time series models
+                ts_models = {
                     'lstm': model_dir / 'lstm_model_lstm.h5',
                     'prophet': model_dir / 'prophet_model_prophet.pkl', 
                     'arima': model_dir / 'arima_model_fitted.pkl'
                 }
                 
-                for model_name, model_file in model_files.items():
-                    if model_file.exists():
+                for model_name, model_file in ts_models.items():
+                    if model_file.exists() and model_name not in models:
                         try:
-                            # Skip if already loaded
-                            if model_name in models:
-                                continue
-                                
                             predictor = TimeSeriesPredictor(model_name)
-                            # Use the base path without extension for load_model
                             base_path = str(model_dir / f"{model_name}_model")
                             predictor.load_model(base_path)
                             models[model_name] = predictor
                             loaded_models += 1
                             logger.info(f"Successfully loaded model: {model_name}")
-                            
                         except Exception as e:
-                            logger.warning(f"Failed to load model from {model_file}: {e}")
-                            continue
+                            logger.warning(f"Failed to load {model_name}: {e}")
+                
+                # GBM models
+                gbm_models = ['lightgbm', 'xgboost']
+                for model_name in gbm_models:
+                    model_file = model_dir / f"{model_name}_gbm_model.joblib"
+                    if model_file.exists() and model_name not in models:
+                        try:
+                            import joblib
+                            model = joblib.load(model_file)
+                            models[model_name] = model
+                            loaded_models += 1
+                            logger.info(f"Successfully loaded model: {model_name}")
+                        except Exception as e:
+                            logger.warning(f"Failed to load {model_name}: {e}")
 
         if loaded_models == 0:
             logger.warning("No models were successfully loaded. API will start with limited functionality.")
@@ -220,11 +247,19 @@ async def predict_demand(request: PredictionRequest, background_tasks: Backgroun
         predictions = predictor.predict(data_df, steps=request.hours_ahead)
 
         # Create timestamps for predictions
-        last_time = data_df.index[-1]
-        timestamps = [
-            (last_time + timedelta(hours=i+1)).isoformat()
-            for i in range(request.hours_ahead)
-        ]
+        if isinstance(data_df.index, pd.DatetimeIndex):
+            last_time = data_df.index[-1]
+            timestamps = [
+                (last_time + timedelta(hours=i+1)).isoformat()
+                for i in range(request.hours_ahead)
+            ]
+        else:
+            # Fallback if index is not datetime
+            base_time = datetime.now()
+            timestamps = [
+                (base_time + timedelta(hours=i+1)).isoformat()
+                for i in range(request.hours_ahead)
+            ]
 
         # Calculate confidence intervals (simplified)
         confidence_intervals = None
@@ -264,15 +299,34 @@ async def predict_demand(request: PredictionRequest, background_tasks: Backgroun
 
 @app.get("/models")
 async def list_models():
-    """List available models."""
+    """List available models with metadata."""
+    production_models = ModelRegistry.get_production_models()
+    metadata = ModelRegistry.get_metadata()
+    
     return {
         "models": list(models.keys()),
-        "count": len(models)
+        "count": len(models),
+        "production_models": production_models,
+        "deployment_metadata": metadata
+    }
+
+
+@app.get("/models/registry")
+async def get_registry_info():
+    """Get complete model registry information."""
+    return {
+        "registry": ModelRegistry.MODEL_CONFIGS,
+        "production_models": ModelRegistry.get_production_models(),
+        "metadata": ModelRegistry.get_metadata(),
+        "validation": {
+            "missing_files": ModelRegistry.validate_deployment(),
+            "status": "valid" if not ModelRegistry.validate_deployment() else "incomplete"
+        }
     }
 
 
 @app.post("/ensemble-predict")
-async def ensemble_predict(request: PredictionRequest):
+async def ensemble_predict(request: EnsemblePredictionRequest):
     """Generate ensemble predictions using multiple models."""
     try:
         # Create ensemble with available models
@@ -306,11 +360,18 @@ async def ensemble_predict(request: PredictionRequest):
         # Generate ensemble predictions
         predictions = ensemble.predict(data_df, steps=request.hours_ahead)
 
-        last_time = data_df.index[-1]
-        timestamps = [
-            (last_time + timedelta(hours=i+1)).isoformat()
-            for i in range(request.hours_ahead)
-        ]
+        if isinstance(data_df.index, pd.DatetimeIndex):
+            last_time = data_df.index[-1]
+            timestamps = [
+                (last_time + timedelta(hours=i+1)).isoformat()
+                for i in range(request.hours_ahead)
+            ]
+        else:
+            base_time = datetime.now()
+            timestamps = [
+                (base_time + timedelta(hours=i+1)).isoformat()
+                for i in range(request.hours_ahead)
+            ]
 
         return PredictionResponse(
             predictions=predictions.tolist(),
