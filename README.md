@@ -4,7 +4,7 @@
 
 This project implements an end-to-end MLOps pipeline for energy demand forecasting using ZenML for pipeline orchestration and Prefect for workflow scheduling. It follows senior ML engineering best practices including reproducible environments, modular code, comprehensive testing, data versioning with DVC, experiment tracking with MLflow/ZenML, robust pipelines, CI/CD, monitoring, and security.
 
-The system forecasts energy demand based on historical data, weather features, and other relevant factors using models like ARIMA, Prophet, and LSTM. It includes exploratory data analysis (EDA) for insights, hyperparameter tuning with Optuna, monitoring with Evidently for drift detection, and interactive dashboards with Streamlit.
+The system forecasts energy demand based on historical data, weather features, and other relevant factors using models like ARIMA, Prophet, LSTM, XGBoost, and LightGBM. It includes exploratory data analysis (EDA) for insights, hyperparameter tuning with Optuna, monitoring with Evidently for drift detection, and interactive dashboards with Streamlit.
 
 ## Features
 
@@ -12,7 +12,7 @@ The system forecasts energy demand based on historical data, weather features, a
 - **Exploratory Data Analysis (EDA)**: Visualize data, statistical summaries, correlation analysis to identify patterns and outliers.
 - **Preprocessing**: Clean, normalize, and handle missing values.
 - **Feature Engineering**: Create time series features (lags, rolling statistics, seasonality).
-- **Model Training**: Train multiple models (ARIMA, Prophet, LSTM) with hyperparameter tuning using Optuna.
+- **Model Training**: Train multiple models (ARIMA, Prophet, LSTM, XGBoost, LightGBM) with hyperparameter tuning using Optuna.
 - **Pipeline Orchestration**: ZenML pipelines for reproducible ML workflows.
 - **Workflow Scheduling**: Prefect flows for automation, retries, and monitoring.
 - **Experiment Tracking**: MLflow integration for model versioning and metrics.
@@ -40,19 +40,19 @@ python scripts/training/train_script.py --config configs/model/model_config.yaml
 ### Running Prefect Flows
 
 ```bash
-python scripts/prefect/deploy_flow.py
+python prefect_flows/orchestration_flow.py
 ```
 
-### Data Ingestion
+### Running EDA
 
 ```bash
-python scripts/ingestion/ingest_script.py
+python scripts/eda/eda_script.py
 ```
 
 ### Monitoring
 
 ```bash
-python scripts/monitoring/monitor_script.py
+python scripts/monitoring/run_monitoring.py
 ```
 
 ## Best Practices Implemented
@@ -71,8 +71,8 @@ python scripts/monitoring/monitor_script.py
 Configuration files are located in `configs/`:
 
 - `model/model_config.yaml`: Model hyperparameters.
-- `data/data_config.yaml`: Data sources and schemas.
 - `prefect/prefect_config.yaml`: Prefect settings.
+- `monitoring/monitoring_config.yaml`: Monitoring settings.
 
 ## Testing
 
@@ -85,9 +85,9 @@ pytest tests/
 ## Monitoring
 
 - Dashboards: Streamlit for interactive model predictions and monitoring visualization.
-- Alerts: Configured in `monitoring/alerts/alert_config.yaml`
 - Logs: Centralized in `logs/`
 - Drift Detection: Evidently for data drift detection and model performance monitoring.
+- Reports: Generated in `reports/monitoring/`
 
 
 ## License
