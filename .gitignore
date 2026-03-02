@@ -94,3 +94,9 @@ htmlcov/
 
 # Prefect
 .prefect/
+
+# DVC temp files
+.dvc/tmp/
+
+# MkDocs build output
+site/
