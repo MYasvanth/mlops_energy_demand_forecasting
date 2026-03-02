@@ -116,33 +116,46 @@ class DataLoader:
             return None
     
     def load_processed_data(self) -> Optional[pd.DataFrame]:
-        """Load processed dataset without cloud storage."""
-        processed_file = self.processed_dir / "processed_energy_weather.csv"
-        
-        # Strategy 1: Try local file first
-        if processed_file.exists():
-            try:
-                logger.info("Loading processed data from local file")
-                return pd.read_csv(processed_file)
-            except Exception as e:
-                logger.warning(f"Failed to load processed file: {e}")
-        
-        # Strategy 2: Generate from raw data (no DVC needed)
+        """Load processed dataset - always uses raw data with original dates."""
+        logger.info("Loading raw data with original dates (2015-2018)")
+        return self._generate_from_raw()
+    
+    def _generate_from_raw(self) -> Optional[pd.DataFrame]:
+        """Generate processed data from raw sources with original dates."""
         try:
             energy_data = self.load_energy_data()
             weather_data = self.load_weather_data()
             
             if energy_data is not None:
-                # Simple processing: use energy data as base
                 logger.info("Generating processed data from raw energy data")
                 processed_data = energy_data.copy()
                 
+                # Clean column names: replace spaces with underscores
+                processed_data.columns = processed_data.columns.str.replace(' ', '_')
+                
+                # Convert time column to datetime index
+                if 'time' in processed_data.columns:
+                    processed_data['time'] = pd.to_datetime(processed_data['time'])
+                    processed_data.set_index('time', inplace=True)
+                
                 # Add weather features if available
-                if weather_data is not None and len(weather_data) == len(energy_data):
-                    weather_cols = ['temperature', 'humidity', 'wind_speed']
-                    for col in weather_cols:
-                        if col in weather_data.columns:
-                            processed_data[col] = weather_data[col]
+                if weather_data is not None:
+                    # Clean weather column names
+                    weather_data.columns = weather_data.columns.str.replace(' ', '_')
+                    
+                    # Select key weather columns
+                    weather_cols = ['temp', 'humidity', 'wind_speed']
+                    available_cols = [col for col in weather_cols if col in weather_data.columns]
+                    
+                    if available_cols and 'dt_iso' in weather_data.columns:
+                        weather_data['dt_iso'] = pd.to_datetime(weather_data['dt_iso'])
+                        weather_data.set_index('dt_iso', inplace=True)
+                        
+                        # Aggregate weather by hour (multiple cities)
+                        weather_agg = weather_data[available_cols].resample('H').mean()
+                        
+                        # Merge with energy data
+                        processed_data = processed_data.join(weather_agg, how='left')
                 
                 return processed_data
                 
@@ -177,7 +190,17 @@ def load_weather_dataset():
     """Load weather dataset from GitHub."""
     return data_loader.load_weather_data()
 
-@st.cache_data
+@st.cache_data(ttl=60)
 def load_processed_dataset():
-    """Load processed dataset."""
-    return data_loader.load_processed_data()
+    """Load processed dataset with datetime index (uses original 2015-2018 dates)."""
+    df = data_loader.load_processed_data()
+    
+    # Force datetime index conversion
+    if df is not None and not df.empty:
+        if not isinstance(df.index, pd.DatetimeIndex):
+            try:
+                df.index = pd.to_datetime(df.index, errors='coerce')
+            except Exception as e:
+                logger.warning(f"Could not convert index to datetime: {e}")
+    
+    return df
