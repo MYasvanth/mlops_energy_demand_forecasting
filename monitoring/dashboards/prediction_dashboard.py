@@ -24,6 +24,16 @@ sys.path.insert(0, str(project_root))
 
 from src.monitoring.evidently_monitoring import EvidentlyMonitor, MonitoringPipeline
 from data_loader import load_processed_dataset
+import joblib
+import os
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Set page configuration
 st.set_page_config(
@@ -38,6 +48,78 @@ plt.style.use('default')
 sns.set_palette("husl")
 
 
+@st.cache_resource
+def load_models_cached():
+    """Load all trained models - cached across reruns."""
+    model_cache = {}
+    errors = []
+    
+    # Get absolute path to project root
+    current_file = Path(__file__).resolve()
+    project_root = current_file.parent.parent.parent
+    models_dir = project_root / "models"
+    
+    logger.info(f"Loading models from: {models_dir}")
+    
+    if not models_dir.exists():
+        error_msg = f"Models directory not found: {models_dir}"
+        logger.error(error_msg)
+        errors.append(error_msg)
+        return model_cache, errors
+    
+    # GBM models - simple direct loading
+    try:
+        lightgbm_path = models_dir / 'lightgbm_gbm_model.joblib'
+        lightgbm_eng_path = models_dir / 'lightgbm_gbm_model_feature_engineer.joblib'
+        
+        if lightgbm_path.exists():
+            model = joblib.load(str(lightgbm_path))
+            engineer = joblib.load(str(lightgbm_eng_path)) if lightgbm_eng_path.exists() else None
+            model_cache['LightGBM'] = {'model': model, 'engineer': engineer, 'type': 'gbm'}
+            logger.info("✅ Loaded LightGBM")
+    except Exception as e:
+        error_msg = f"LightGBM load error: {str(e)}"
+        logger.error(error_msg)
+        errors.append(error_msg)
+    
+    try:
+        xgboost_path = models_dir / 'xgboost_gbm_model.joblib'
+        xgboost_eng_path = models_dir / 'xgboost_gbm_model_feature_engineer.joblib'
+        
+        if xgboost_path.exists():
+            model = joblib.load(str(xgboost_path))
+            engineer = joblib.load(str(xgboost_eng_path)) if xgboost_eng_path.exists() else None
+            model_cache['XGBoost'] = {'model': model, 'engineer': engineer, 'type': 'gbm'}
+            logger.info("✅ Loaded XGBoost")
+    except Exception as e:
+        error_msg = f"XGBoost load error: {str(e)}"
+        logger.error(error_msg)
+        errors.append(error_msg)
+    
+    # Time series models
+    try:
+        sys.path.insert(0, str(project_root))
+        from src.models.predict import TimeSeriesPredictor
+        
+        for name, base in [('LSTM', 'lstm_model'), ('Prophet', 'prophet_model'), ('ARIMA', 'arima_model')]:
+            try:
+                predictor = TimeSeriesPredictor(name.lower())
+                predictor.load_model(str(models_dir / base))
+                model_cache[name] = {'model': predictor, 'type': 'timeseries'}
+                logger.info(f"✅ Loaded {name}")
+            except Exception as e:
+                error_msg = f"{name} load error: {str(e)}"
+                logger.error(error_msg)
+                errors.append(error_msg)
+    except Exception as e:
+        error_msg = f"TimeSeriesPredictor import error: {str(e)}"
+        logger.error(error_msg)
+        errors.append(error_msg)
+    
+    logger.info(f"📊 Total: {len(model_cache)} models loaded")
+    return model_cache, errors
+
+
 class PredictionDashboard:
     """
     Interactive dashboard for energy demand forecasting predictions and monitoring.
@@ -45,12 +127,45 @@ class PredictionDashboard:
 
     def __init__(self):
         self.data_cache = {}
-        self.model_cache = {}
+        self.model_cache, self.load_errors = load_models_cached()  # Get cache and errors
         self.monitor = None
         self.monitoring_results = None
         self.reference_data_path = "data/processed/processed_energy_weather.csv"
         self.current_data_path = "data/processed/current_batch.csv"
 
+
+    def prepare_data_for_prediction(self, model_type: str):
+        """Prepare data with proper preprocessing for predictions."""
+        try:
+            # Load processed data first
+            processed_data = load_processed_dataset()
+            
+            if processed_data is None or processed_data.empty:
+                # Fallback: load and preprocess raw data
+                from src.data.ingestion import ingest_data
+                from src.data.preprocessing import full_preprocessing_pipeline
+                
+                raw_data = ingest_data(self.energy_path, self.weather_path)
+                processed_data = full_preprocessing_pipeline(raw_data['energy'], raw_data['weather'])
+            
+            # Ensure datetime index
+            if not isinstance(processed_data.index, pd.DatetimeIndex):
+                if 'time' in processed_data.columns:
+                    processed_data['time'] = pd.to_datetime(processed_data['time'])
+                    processed_data.set_index('time', inplace=True)
+                else:
+                    # Try to convert existing index to datetime
+                    try:
+                        processed_data.index = pd.to_datetime(processed_data.index)
+                    except:
+                        st.warning("⚠️ Could not convert index to datetime. Predictions may have incorrect timestamps.")
+            
+            return processed_data
+            
+        except Exception as e:
+            st.error(f"Error preparing data: {e}")
+            return None
+    
     def load_data(self, data_path: str) -> pd.DataFrame:
         """
         Load and cache data.
@@ -84,6 +199,19 @@ class PredictionDashboard:
     def create_sidebar(self):
         """Create sidebar with controls."""
         st.sidebar.title("⚡ Energy Demand Forecasting")
+        
+        # Show model loading status with debug info
+        if self.model_cache:
+            st.sidebar.success(f"✅ {len(self.model_cache)} models loaded")
+            with st.sidebar.expander("Loaded Models"):
+                for model_name in self.model_cache.keys():
+                    st.write(f"• {model_name}")
+        else:
+            st.sidebar.error("❌ No models loaded!")
+            if self.load_errors:
+                with st.sidebar.expander("⚠️ Load Errors"):
+                    for error in self.load_errors:
+                        st.error(error)
 
         # Data selection
         st.sidebar.subheader("Data Selection")
@@ -98,11 +226,20 @@ class PredictionDashboard:
 
         # Model selection
         st.sidebar.subheader("Model Selection")
+        available_models = list(self.model_cache.keys()) if self.model_cache else []
+        # Filter out GBM models - they don't work with dashboard data
+        time_series_models = [m for m in available_models if m in ['LSTM', 'Prophet', 'ARIMA']]
+        if not time_series_models:
+            time_series_models = ["LSTM", "Prophet", "ARIMA"]
+        
         self.selected_model = st.sidebar.selectbox(
             "Choose Model",
-            ["ARIMA", "Prophet", "LSTM", "Ensemble"],
-            index=2
+            time_series_models,
+            index=0
         )
+        
+        if self.model_cache and any(m in ['LightGBM', 'XGBoost'] for m in self.model_cache.keys()):
+            st.sidebar.info("ℹ️ GBM models hidden (require 200 features)")
 
         # Prediction settings
         st.sidebar.subheader("Prediction Settings")
@@ -355,76 +492,134 @@ class PredictionDashboard:
     def display_predictions(self):
         """Display prediction results."""
         st.header("🔮 Predictions")
+        
+        # Diagnostic information
+        with st.expander("🔍 Model Loading Diagnostics"):
+            import os
+            current_file = Path(__file__).resolve()
+            project_root = current_file.parent.parent.parent
+            models_dir = project_root / "models"
+            
+            st.write(f"**Script location:** `{current_file}`")
+            st.write(f"**Project root:** `{project_root}`")
+            st.write(f"**Models directory:** `{models_dir}`")
+            st.write(f"**Models dir exists:** {models_dir.exists()}")
+            st.write(f"**Current working dir:** `{os.getcwd()}`")
+            
+            if models_dir.exists():
+                st.write("\n**Files in models directory:**")
+                try:
+                    files = list(models_dir.glob("*.joblib")) + list(models_dir.glob("*.pkl")) + list(models_dir.glob("*.h5"))
+                    for f in files:
+                        st.write(f"- {f.name}")
+                except Exception as e:
+                    st.error(f"Error listing files: {e}")
+            
+            st.write(f"\n**Models in cache:** {len(self.model_cache)}")
+            if self.model_cache:
+                for name, info in self.model_cache.items():
+                    st.write(f"- {name}: {info['type']}")
+            
+            if self.load_errors:
+                st.write("\n**Load Errors:**")
+                for error in self.load_errors:
+                    st.error(error)
+        
+        # Show loaded models status
+        if not self.model_cache:
+            st.error("❌ No models loaded. Please install missing dependencies:")
+            st.code("pip install lightgbm xgboost\npip install --force-reinstall numpy==1.23.5", language="bash")
+            st.warning("After installing dependencies, refresh the page or restart the dashboard.")
+            return
+        
+        st.success(f"✅ {len(self.model_cache)} models loaded: {', '.join(self.model_cache.keys())}")
 
         try:
-            # Load processed data for prediction (contains the target column)
-            processed_data = load_processed_dataset()
-            if processed_data is None or processed_data.empty:
-                processed_data = self.load_data(self.energy_path)
-
-            if not processed_data.empty and 'total_load_actual' in processed_data.columns:
-                # Make predictions (simplified - in practice load trained model)
-                if st.button("Generate Predictions"):
-                    with st.spinner("Generating predictions..."):
-                        # Placeholder for actual prediction logic
+            if st.button("🚀 Generate Predictions", type="primary"):
+                with st.spinner("Generating predictions..."):
+                    # Prepare data with proper preprocessing
+                    processed_data = self.prepare_data_for_prediction(self.selected_model)
+                    
+                    if processed_data is None or processed_data.empty:
+                        st.error("Failed to load/prepare data for prediction")
+                        return
+                    
+                    if 'total_load_actual' not in processed_data.columns:
+                        st.error("Target column 'total_load_actual' not found in data")
+                        return
+                    
+                    model_name = self.selected_model
+                    
+                    if model_name not in self.model_cache:
+                        st.error(f"Model {model_name} not loaded. Available: {list(self.model_cache.keys())}")
+                        return
+                    
+                    model_info = self.model_cache[model_name]
+                    
+                    # Generate predictions based on model type
+                    if model_info['type'] == 'gbm':
+                        st.warning("⚠️ GBM models require 200 engineered features")
+                        st.info("✅ Use time series models: LSTM, Prophet, ARIMA")
+                        return
+                    else:
+                        # Time series prediction
+                        predictor = model_info['model']
+                        predictions = predictor.predict(processed_data, steps=self.forecast_hours)
+                    
+                    # Create prediction dates - handle both datetime and numeric indices
+                    if isinstance(processed_data.index, pd.DatetimeIndex) and len(processed_data.index) > 0:
                         last_date = processed_data.index[-1]
-                        pred_dates = pd.date_range(
-                            start=last_date,
-                            periods=self.forecast_hours + 1,
-                            freq='H'
-                        )[1:]
-
-                        # Generate sample predictions (replace with actual model)
-                        np.random.seed(42)
-                        base_load = processed_data['total_load_actual'].iloc[-24:].mean()
-                        predictions = base_load + np.random.normal(0, base_load * 0.1, self.forecast_hours)
-
-                        # Create results DataFrame
-                        pred_df = pd.DataFrame({
-                            'date': pred_dates,
-                            'prediction': predictions,
-                            'model': self.selected_model
-                        })
-
-                        # Display predictions
-                        st.subheader(f"{self.selected_model} Predictions")
-                        st.dataframe(pred_df)
-
-                        # Plot predictions
-                        fig = go.Figure()
-                        fig.add_trace(go.Scatter(
-                            x=pred_df['date'],
-                            y=pred_df['prediction'],
-                            mode='lines+markers',
-                            name='Predictions',
-                            line=dict(color='green', width=3)
-                        ))
-
-                        fig.update_layout(
-                            title=f"{self.selected_model} Forecast - Next {self.forecast_hours} Hours",
-                            xaxis_title="Time",
-                            yaxis_title="Predicted Load (MW)",
-                            height=400
-                        )
-
-                        st.plotly_chart(fig, use_container_width=True)
-
-                        # Prediction statistics
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            st.metric("Mean Prediction", ".0f")
-                        with col2:
-                            st.metric("Min Prediction", ".0f")
-                        with col3:
-                            st.metric("Max Prediction", ".0f")
-            else:
-                st.warning("⚠️ Prediction data not available. The processed data with 'total_load_actual' column is required for predictions.")
-                st.info("Please ensure the processed data file exists and contains the target column.")
-
+                        st.info(f"📅 Last data point: {last_date}")
+                        pred_dates = pd.date_range(start=last_date, periods=self.forecast_hours + 1, freq='H')[1:]
+                    else:
+                        # Fallback: use dataset end date (2018-12-31) + predictions forward
+                        st.warning("⚠️ Data index issue detected. Using 2018-12-31 as base date.")
+                        last_date = pd.Timestamp('2018-12-31 23:00:00')
+                        pred_dates = pd.date_range(start=last_date, periods=self.forecast_hours + 1, freq='H')[1:]
+                    
+                    # Create results DataFrame
+                    pred_df = pd.DataFrame({
+                        'date': pred_dates,
+                        'prediction': predictions,
+                        'model': model_name
+                    })
+                    
+                    # Display predictions
+                    st.subheader(f"{model_name} Predictions")
+                    st.dataframe(pred_df)
+                    
+                    # Plot predictions
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(
+                        x=pred_df['date'],
+                        y=pred_df['prediction'],
+                        mode='lines+markers',
+                        name='Predictions',
+                        line=dict(color='green', width=3)
+                    ))
+                    
+                    fig.update_layout(
+                        title=f"{model_name} Forecast - Next {self.forecast_hours} Hours",
+                        xaxis_title="Time",
+                        yaxis_title="Predicted Load (MW)",
+                        height=400
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Prediction statistics
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Mean Prediction", f"{predictions.mean():.0f}")
+                    with col2:
+                        st.metric("Min Prediction", f"{predictions.min():.0f}")
+                    with col3:
+                        st.metric("Max Prediction", f"{predictions.max():.0f}")
+        
         except Exception as e:
             st.error(f"Error generating predictions: {e}")
-            if "'total_load_actual'" in str(e):
-                st.info("The target column 'total_load_actual' is missing from the data. Please ensure the processed data contains this column.")
+            import traceback
+            st.code(traceback.format_exc())
 
     def display_model_performance(self):
         """Display model performance metrics."""
