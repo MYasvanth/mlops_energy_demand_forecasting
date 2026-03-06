@@ -24,7 +24,7 @@ class EvaluationDashboard:
     Interactive dashboard for model evaluation and cross-validation results.
     """
 
-    def __init__(self, results_path: str = 'reports/model_performance/evaluation_report.json'):
+    def __init__(self, results_path: str = 'reports/model_performance/evaluation_report_latest.json'):
         """
         Initialize the evaluation dashboard.
 
@@ -628,7 +628,7 @@ class EvaluationDashboard:
             st.json(self.results)
 
 
-def run_evaluation_dashboard(results_path: str = 'reports/model_performance/evaluation_report.json'):
+def run_evaluation_dashboard(results_path: str = 'reports/model_performance/evaluation_report_latest.json'):
     """
     Run the evaluation dashboard.
 
@@ -641,5 +641,5 @@ def run_evaluation_dashboard(results_path: str = 'reports/model_performance/eval
 
 if __name__ == "__main__":
     import sys
-    results_path = sys.argv[1] if len(sys.argv) > 1 else 'reports/model_performance/evaluation_report.json'
+    results_path = sys.argv[1] if len(sys.argv) > 1 else 'reports/model_performance/evaluation_report_latest.json'
     run_evaluation_dashboard(results_path)
