@@ -12,7 +12,7 @@ import json
 import joblib
 
 # Add project root to path
-project_root = Path(__file__).parent
+project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.models.evaluation import (
@@ -30,11 +30,19 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def load_trained_models():
-    """Load all trained models from the models directory."""
-    models_dir = project_root / 'models'
+    """Load all trained models from production directory following MLOps best practices."""
+    # Use production directory for evaluation (production-ready models)
+    models_dir = project_root / 'models' / 'production'
+    
+    # Fallback to root models directory if production doesn't exist
+    if not models_dir.exists():
+        logger.warning("Production directory not found, using root models directory")
+        models_dir = project_root / 'models'
+    
     loaded_models = {}
     
-    # Check for ARIMA model
+    # Time Series Models
+    # ARIMA
     arima_fitted = models_dir / 'arima_model_fitted.pkl'
     if arima_fitted.exists():
         try:
@@ -43,7 +51,7 @@ def load_trained_models():
         except Exception as e:
             logger.warning(f"Failed to load ARIMA model: {e}")
     
-    # Check for Prophet model
+    # Prophet
     prophet_model = models_dir / 'prophet_model_prophet.pkl'
     if prophet_model.exists():
         try:
@@ -52,7 +60,7 @@ def load_trained_models():
         except Exception as e:
             logger.warning(f"Failed to load Prophet model: {e}")
     
-    # Check for LSTM model
+    # LSTM
     lstm_model = models_dir / 'lstm_model_lstm.h5'
     lstm_scaler = models_dir / 'lstm_model_scaler.pkl'
     if lstm_model.exists() and lstm_scaler.exists():
@@ -66,6 +74,31 @@ def load_trained_models():
             logger.info("✓ LSTM model loaded")
         except Exception as e:
             logger.warning(f"Failed to load LSTM model: {e}")
+    
+    # Gradient Boosting Models
+    # XGBoost
+    xgb_model = models_dir / 'xgboost_gbm_model.joblib'
+    xgb_engineer = models_dir / 'xgboost_gbm_model_feature_engineer.joblib'
+    if xgb_model.exists():
+        try:
+            model = joblib.load(xgb_model)
+            engineer = joblib.load(xgb_engineer) if xgb_engineer.exists() else None
+            loaded_models['xgboost'] = {'model': model, 'engineer': engineer}
+            logger.info("✓ XGBoost model loaded")
+        except Exception as e:
+            logger.warning(f"Failed to load XGBoost model: {e}")
+    
+    # LightGBM
+    lgb_model = models_dir / 'lightgbm_gbm_model.joblib'
+    lgb_engineer = models_dir / 'lightgbm_gbm_model_feature_engineer.joblib'
+    if lgb_model.exists():
+        try:
+            model = joblib.load(lgb_model)
+            engineer = joblib.load(lgb_engineer) if lgb_engineer.exists() else None
+            loaded_models['lightgbm'] = {'model': model, 'engineer': engineer}
+            logger.info("✓ LightGBM model loaded")
+        except Exception as e:
+            logger.warning(f"Failed to load LightGBM model: {e}")
     
     return loaded_models
 
