@@ -102,16 +102,16 @@ def load_trained_models():
     
     return loaded_models
 
-def evaluate_model_performance(df, target_col, model_name, model_obj):
+def evaluate_model_performance(df, target_col, model_name, model_obj, window_size=168):
     """Evaluate a single model's performance."""
-    logger.info(f"Evaluating {model_name} model...")
+    logger.info(f"Evaluating {model_name} model with {window_size}h windows...")
     
     try:
         # Use walk-forward validation for comprehensive evaluation
         cv_results = walk_forward_validation(
             df=df, 
             target_column=target_col,
-            window_size=720,  # 30 days
+            window_size=window_size,  # Configurable window size
             forecast_horizon=24,  # 1 day
             model_type=model_name
         )
@@ -195,8 +195,28 @@ def evaluate_model_performance(df, target_col, model_name, model_obj):
 
 def main():
     """Main evaluation pipeline."""
+    import argparse
+    
+    # Add command line arguments
+    parser = argparse.ArgumentParser(description="Evaluate trained models")
+    parser.add_argument(
+        '--models', 
+        nargs='+', 
+        default=['xgboost', 'lightgbm'],  # Fast models by default
+        choices=['arima', 'prophet', 'lstm', 'xgboost', 'lightgbm'],
+        help='Models to evaluate (default: xgboost lightgbm)'
+    )
+    parser.add_argument(
+        '--window-size',
+        type=int,
+        default=168,  # 1 week (faster than 30 days)
+        help='Validation window size in hours (default: 168)'
+    )
+    args = parser.parse_args()
+    
     try:
-        logger.info("Starting comprehensive model evaluation...")
+        logger.info(f"Starting evaluation for models: {args.models}")
+        logger.info(f"Window size: {args.window_size} hours")
         
         # Load data
         logger.info("Loading and preprocessing data...")
@@ -219,15 +239,17 @@ def main():
         
         logger.info(f"Data prepared: {feature_data.shape}")
         
-        # Load trained models
+        # Load trained models (filter by selected models)
         logger.info("Loading trained models...")
-        models = load_trained_models()
+        all_models = load_trained_models()
+        models = {name: model for name, model in all_models.items() if name in args.models}
         
         if not models:
-            logger.error("No trained models found")
+            logger.error(f"No models found for: {args.models}")
+            logger.info(f"Available models: {list(all_models.keys())}")
             return
         
-        logger.info(f"Found {len(models)} trained models: {list(models.keys())}")
+        logger.info(f"Loaded {len(models)} models: {list(models.keys())}")
         
         # Evaluate each model
         evaluation_results = {}
@@ -241,7 +263,8 @@ def main():
                 df=feature_data,
                 target_col=target_col,
                 model_name=model_name,
-                model_obj=models[model_name]
+                model_obj=models[model_name],
+                window_size=args.window_size  # Pass window size
             )
             
             evaluation_results[model_name] = result
