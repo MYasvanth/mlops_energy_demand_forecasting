@@ -27,8 +27,8 @@ def main():
     parser.add_argument(
         '--results-path',
         type=str,
-        default='reports/model_performance/evaluation_report.json',
-        help='Path to evaluation results JSON file'
+        default='reports/model_performance/evaluation_report_latest.json',
+        help='Path to evaluation results JSON file (default: latest)'
     )
 
     parser.add_argument(
