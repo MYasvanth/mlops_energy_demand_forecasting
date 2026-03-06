@@ -257,8 +257,12 @@ def main():
         # Generate comprehensive report
         logger.info("Generating evaluation report...")
         
+        timestamp = pd.Timestamp.now()
+        timestamp_str = timestamp.strftime('%Y%m%d_%H%M%S')
+        
         report = {
-            "timestamp": pd.Timestamp.now().isoformat(),
+            "timestamp": timestamp.isoformat(),
+            "evaluation_id": timestamp_str,
             "model_comparison": evaluation_results,
             "best_model": best_model,
             "summary": {
@@ -266,17 +270,48 @@ def main():
                 "best_model": best_model,
                 "best_model_mae": best_mae,
                 "average_mae": np.mean([r.get('mae', float('inf')) for r in evaluation_results.values() if np.isfinite(r.get('mae', float('inf')))])
+            },
+            "metadata": {
+                "data_shape": feature_data.shape,
+                "target_column": target_col,
+                "models_evaluated": list(evaluation_results.keys())
             }
         }
         
-        # Save report
-        output_path = project_root / 'reports' / 'model_performance' / 'evaluation_report.json'
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+        # Save versioned report
+        reports_dir = project_root / 'reports' / 'model_performance'
+        reports_dir.mkdir(parents=True, exist_ok=True)
         
-        with open(output_path, 'w') as f:
+        versioned_path = reports_dir / f'evaluation_report_{timestamp_str}.json'
+        with open(versioned_path, 'w') as f:
             json.dump(report, f, indent=2, default=str)
+        logger.info(f"Versioned report saved: {versioned_path}")
         
-        logger.info(f"Evaluation report saved: {output_path}")
+        # Save as latest (for dashboard default)
+        latest_path = reports_dir / 'evaluation_report_latest.json'
+        with open(latest_path, 'w') as f:
+            json.dump(report, f, indent=2, default=str)
+        logger.info(f"Latest report saved: {latest_path}")
+        
+        # Maintain evaluation history index
+        history_path = reports_dir / 'evaluation_history.json'
+        history = []
+        if history_path.exists():
+            with open(history_path, 'r') as f:
+                history = json.load(f)
+        
+        history.append({
+            "evaluation_id": timestamp_str,
+            "timestamp": timestamp.isoformat(),
+            "best_model": best_model,
+            "best_mae": best_mae,
+            "models_evaluated": list(evaluation_results.keys()),
+            "report_path": str(versioned_path.relative_to(project_root))
+        })
+        
+        with open(history_path, 'w') as f:
+            json.dump(history, f, indent=2, default=str)
+        logger.info(f"Evaluation history updated: {history_path}")
         
         # Print summary
         print("\n" + "="*60)
@@ -298,7 +333,10 @@ def main():
         
         print(f"\nBest Model: {best_model}")
         print(f"Best MAE: {best_mae:.4f}")
-        print(f"\nReport saved to: {output_path}")
+        print(f"\nReports saved:")
+        print(f"  - Versioned: {versioned_path}")
+        print(f"  - Latest: {latest_path}")
+        print(f"  - History: {history_path}")
         
         logger.info("Comprehensive model evaluation completed successfully!")
         
