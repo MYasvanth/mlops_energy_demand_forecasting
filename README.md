@@ -29,6 +29,10 @@ Data Sources (CSV, API, DB) -> Ingestion -> Preprocessing -> Feature Engineering
                                    ZenML     Prefect       MLflow         DVC         Docker       Kubernetes   
 ```
 
+Architecture Overview
+
+This architecture illustrates the **end-to-end MLOps pipeline for energy demand forecasting**, covering data ingestion, preprocessing, model training, experiment tracking, and deployment. The system integrates automated pipelines, monitoring, and scalable infrastructure to ensure **reliable and production-ready forecasting workflows**.
+
 ![Energy Forecasting Architecture](docs/diagrams/Architecture.png)
 
 ## Usage
