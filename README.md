@@ -21,13 +21,15 @@ The system forecasts energy demand based on historical data, weather features, a
 - **Monitoring**: Alerts for model drift and performance degradation.
 - **Testing**: Comprehensive unit and integration tests.
 
-## Architecture
+## 🏗️ System Architecture
 
 ```
 Data Sources (CSV, API, DB) -> Ingestion -> Preprocessing -> Feature Engineering -> Model Training -> Evaluation -> Deployment -> Monitoring
                                       |           |              |              |              |              |              |
                                    ZenML     Prefect       MLflow         DVC         Docker       Kubernetes   
 ```
+
+![Energy Forecasting Architecture](docs/diagrams/Architecture.png)
 
 ## Usage
 
